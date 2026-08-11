@@ -62,16 +62,36 @@ FEMALE_LIFE_EXPECTANCY = {
 }
 
 
-def get_life_expectancy(age: int, sex: str) -> float:
+def get_life_expectancy(age: float, sex: str) -> float:
     """Get remaining life expectancy in years for a given age and sex.
 
+    The SSA table only lists whole ages (39, 40, 41...). If we looked up just
+    the whole-number age, the estimate would sit perfectly still for a year and
+    then lurch on your birthday. That's what caused the death date to jump
+    backwards by ~11 months whenever it was recalculated after a birthday.
+
+    So we interpolate: for an age in between two rows, we blend the two
+    surrounding values proportionally. At age 39.5 — exactly halfway between
+    e(39)=36.63 and e(40)=35.72 — this returns 36.175.
+
     Args:
-        age: Current age (0-119). Ages above 119 return 0.5.
+        age: Current age in years, may be fractional (e.g. 39.7).
+             Clamped to the 0-119 range the table covers.
         sex: 'male' or 'female'
 
     Returns:
         Remaining life expectancy in years.
     """
     table = MALE_LIFE_EXPECTANCY if sex.lower() == "male" else FEMALE_LIFE_EXPECTANCY
-    age = max(0, min(age, 119))
-    return table.get(age, 0.5)
+
+    age = max(0.0, min(float(age), 119.0))
+
+    lower_age = int(age)             # e.g. 39 for age 39.7
+    upper_age = min(lower_age + 1, 119)
+    fraction = age - lower_age       # e.g. 0.7 — how far between the two rows
+
+    lower_value = table.get(lower_age, 0.5)
+    upper_value = table.get(upper_age, 0.5)
+
+    # Linear blend between the two table rows
+    return lower_value + (upper_value - lower_value) * fraction

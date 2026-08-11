@@ -76,9 +76,15 @@ def compute_death_datetime(
     # Calculate current age as a decimal (e.g. 38.7 years)
     age_float = (now - date_of_birth).days / 365.25
 
-    # Look up remaining life expectancy from SSA table using integer age
-    age_int = int(age_float)
-    base_remaining_years = get_life_expectancy(age_int, sex)
+    # Look up remaining life expectancy, interpolated at the exact fractional age.
+    #
+    # We deliberately pass the DECIMAL age, not int(age_float). Using the whole
+    # number made the result unstable: age_float crept up every day while the
+    # table lookup only changed on your birthday, so the computed death date
+    # drifted later day by day and then snapped ~11 months backwards each year.
+    # Interpolating keeps the two in step, so the same inputs give the same
+    # answer no matter which day (or machine) you calculate on.
+    base_remaining_years = get_life_expectancy(age_float, sex)
 
     # Combine all active hazard ratios (multiply them together)
     combined_hazard = 1.0
