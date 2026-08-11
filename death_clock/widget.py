@@ -111,6 +111,12 @@ class CountdownWidget:
 
         self.win.geometry(f"{w}x{h}+{x}+{y}")
 
+        # Remember the restored size so _build_ui() can scale the fonts to match.
+        # We can't ask the window for its own width here -- it hasn't been drawn
+        # yet, so winfo_width() would report 1.
+        self._restored_width = w
+        self._restored_height = h
+
         # Block Alt+F4 (it would kill the whole process since we have no title bar)
         self.win.bind("<Alt-F4>", lambda e: "break")
 
@@ -166,6 +172,12 @@ class CountdownWidget:
             cursor="size_nw_se",  # Shows a diagonal resize cursor on hover
         )
         self.grip.place(relx=1.0, rely=1.0, anchor="se")
+
+        # Scale the text to the size the window was actually restored at.
+        # The font sizes above are just starting values; without this the
+        # widget came back at its saved dimensions but with default-size text,
+        # so a window you had resized looked wrong until you nudged the grip.
+        self._scale_fonts(self._restored_width, self._restored_height)
 
     # ── Event binding ─────────────────────────────────────────────────────────
 
