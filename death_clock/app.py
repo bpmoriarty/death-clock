@@ -143,7 +143,18 @@ class App:
             self._create_widget(death_dt)
             self._start_tray()
 
-        SettingsWindow(self.root, self.config, on_save=on_first_save)
+        def on_first_close(was_saved: bool):
+            # At this point nothing else exists yet -- no widget, no tray icon.
+            # If the user closed the form without saving, there is no remaining
+            # way to interact with the app, and because we launch via pythonw.exe
+            # there is no console either. Without this the process would sit in
+            # mainloop() completely invisible, killable only via Task Manager.
+            if not was_saved:
+                self._exit()
+
+        SettingsWindow(self.root, self.config,
+                       on_save=on_first_save,
+                       on_close=on_first_close)
 
     def _open_settings(self):
         """Open the settings window from the widget's right-click menu."""

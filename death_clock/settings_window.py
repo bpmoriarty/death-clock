@@ -45,15 +45,27 @@ PROTECTIVE_FACTORS = [
 class SettingsWindow:
     """Modal window for editing health profile and preferences."""
 
-    def __init__(self, parent, config: dict, on_save: callable):
+    # Note: on_close has no type annotation on purpose. The rest of this file
+    # uses `callable` as a shorthand hint, but `callable` is a builtin function
+    # rather than a real type, so writing `callable | None` raises a TypeError
+    # when Python evaluates the signature -- which would stop the app booting.
+    def __init__(self, parent, config: dict, on_save: callable, on_close=None):
         """
         Args:
             parent:   The tkinter root (used as parent for the modal)
             config:   The current settings dict (will be mutated on save)
             on_save:  Callback called after successful save, receives updated config
+            on_close: Optional callback fired when the window is closed with the
+                      X button. Receives True if a save happened first, False if
+                      the user backed out. app.py uses this on first launch to
+                      shut down cleanly rather than linger with no UI.
         """
         self.config = config
         self.on_save = on_save
+        self.on_close = on_close
+
+        # Tracks whether the user actually saved before closing
+        self._saved = False
 
         # Create the settings window
         self.win = ctk.CTkToplevel(parent)
@@ -63,6 +75,11 @@ class SettingsWindow:
 
         # Keep it on top while open
         self.win.attributes("-topmost", True)
+
+        # Intercept the X button so the caller can react to being dismissed.
+        # (This only fires for the window manager's close button -- calling
+        # self.win.destroy() ourselves after a save does not trigger it.)
+        self.win.protocol("WM_DELETE_WINDOW", self._close)
 
         self._build_ui()
 
@@ -194,6 +211,12 @@ class SettingsWindow:
         )
         self.ref_label.pack(**pad, pady=(0, 16))
 
+    def _close(self):
+        """Handle the window's X button, telling the caller whether we saved."""
+        self.win.destroy()
+        if self.on_close:
+            self.on_close(self._saved)
+
     def _save(self):
         """Validate inputs, recalculate death date, and save to disk."""
 
@@ -246,6 +269,7 @@ class SettingsWindow:
 
         # ── Save to disk ───────────────────────────────────────────────────
         save_config(self.config)
+        self._saved = True
 
         # ── Notify the app ─────────────────────────────────────────────────
         self.on_save(self.config, death_dt)
