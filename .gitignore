@@ -1,0 +1,23 @@
+# ── Personal data ─────────────────────────────────────────────────────────────
+# settings.json holds your date of birth, health factors and death date.
+# It is deliberately NOT tracked by git so it never reaches GitHub.
+# See settings.example.json for the shape of the file.
+settings.json
+
+# ── Virtual environment ───────────────────────────────────────────────────────
+# Recreated on any machine with `uv sync` -- never commit it.
+.venv/
+venv/
+
+# ── Python bytecode ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ── OS / editor cruft ─────────────────────────────────────────────────────────
+# desktop.ini and Thumbs.db show up a lot inside OneDrive folders.
+desktop.ini
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
