@@ -1,0 +1,20 @@
+[project]
+name = "death-clock"
+version = "1.0.0"
+description = "An always-on-top desktop widget that counts down to an estimated death date, based on SSA actuarial life tables."
+readme = "README.md"
+requires-python = ">=3.12"
+
+# The libraries the app needs. `uv sync` reads this list, resolves exact
+# versions, and records them in uv.lock so every machine installs the same ones.
+dependencies = [
+    "customtkinter>=5.2.2",
+    "pystray>=0.19.5",
+    "pillow>=10.0.0",
+]
+
+[tool.uv]
+# Death Clock is an application we run, not a library we publish to PyPI.
+# `package = false` tells uv to install the dependencies above without trying
+# to build death_clock/ into an installable package -- no build backend needed.
+package = false

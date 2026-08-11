@@ -1,0 +1,29 @@
+{
+  "_comment": "Template for settings.json. Copy this to settings.json, or just launch the app and fill in the Settings window. death_datetime_iso is written for you when you press Save -- leave it empty here.",
+
+  "date_of_birth": "",
+  "sex": "male",
+  "death_datetime_iso": "",
+
+  "factors": {
+    "current_smoker": false,
+    "former_smoker": false,
+    "obesity": false,
+    "sedentary": false,
+    "heavy_drinking": false,
+    "diabetes": false,
+    "regular_exercise": false,
+    "mediterranean_diet": false,
+    "college_degree": false,
+    "married": false
+  },
+
+  "window": {
+    "x": 100,
+    "y": 100,
+    "width": 440,
+    "height": 120
+  },
+
+  "start_on_boot": false
+}
