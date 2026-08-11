@@ -7,10 +7,16 @@ requires-python = ">=3.12"
 
 # The libraries the app needs. `uv sync` reads this list, resolves exact
 # versions, and records them in uv.lock so every machine installs the same ones.
+#
+# The upper bounds matter. These are the versions the app is actually known to
+# work with. Without the `<6.0.0` bound, uv would happily install
+# customtkinter 6.x -- a major version, which by convention is where breaking
+# API changes land, and the settings window is built entirely on its widgets.
+# Raise a bound deliberately, then launch the app and check it still works.
 dependencies = [
-    "customtkinter>=5.2.2",
-    "pystray>=0.19.5",
-    "pillow>=10.0.0",
+    "customtkinter>=5.2.2,<6.0.0",
+    "pystray>=0.19.5,<0.20.0",
+    "pillow>=12.1.1,<13.0.0",
 ]
 
 [tool.uv]
