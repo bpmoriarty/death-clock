@@ -9,10 +9,16 @@ settings.json
 .venv/
 venv/
 
-# ── Python bytecode ───────────────────────────────────────────────────────────
+# ── Python bytecode and tool caches ───────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
+.pytest_cache/
+
+# ── Config write artifacts ────────────────────────────────────────────────────
+# Left behind only if a settings save is interrupted partway through.
+settings.json.tmp
+settings.json.corrupt
 
 # ── OS / editor cruft ─────────────────────────────────────────────────────────
 # desktop.ini and Thumbs.db show up a lot inside OneDrive folders.
