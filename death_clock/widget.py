@@ -93,11 +93,21 @@ class CountdownWidget:
         x = win_cfg.get("x", 100)
         y = win_cfg.get("y", 100)
 
-        # Make sure window is on-screen (handles monitor config changes)
+        # Keep the widget reachable, but don't force it fully on-screen.
+        #
+        # Negative coordinates are legitimate: they happen when you park the
+        # widget slightly past the left or top edge, or on a second monitor
+        # positioned to the left of the primary one. The old code clamped to
+        # a minimum of 0, which quietly nudged the widget right every launch.
+        #
+        # Instead we only reposition when almost none of it would be visible
+        # (e.g. after unplugging the monitor it was living on). VISIBLE_MARGIN
+        # is how many pixels must stay on-screen so you can still grab it.
+        VISIBLE_MARGIN = 60
         screen_w = self.win.winfo_screenwidth()
         screen_h = self.win.winfo_screenheight()
-        x = max(0, min(x, screen_w - w))
-        y = max(0, min(y, screen_h - h))
+        x = max(VISIBLE_MARGIN - w, min(x, screen_w - VISIBLE_MARGIN))
+        y = max(VISIBLE_MARGIN - h, min(y, screen_h - VISIBLE_MARGIN))
 
         self.win.geometry(f"{w}x{h}+{x}+{y}")
 
