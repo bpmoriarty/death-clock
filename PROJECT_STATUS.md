@@ -7,11 +7,15 @@ A desktop app that counts down to an estimated death date using SSA actuarial li
 
 ## Current Status
 
-**Phase:** Hardening (was: Polishing)
+**Phase:** Hardened — back to optional polish
 
 **Last Session:** 2026-08-11
 
-**Overall Health:** 🟢 Working — in continuous daily use
+**Overall Health:** 🟢 Working — in continuous daily use, now with 56 tests
+
+> ⚠️ **The widget currently running is still the old code.** It has been up since
+> 2026-07-31 and holds the pre-fix version in memory. Exit it from the tray and
+> relaunch `run.pyw` to pick up today's fixes.
 
 ### What's Working
 - Always-on-top countdown widget (gray background, green numerals)
@@ -25,29 +29,38 @@ A desktop app that counts down to an estimated death date using SSA actuarial li
 - **Now under version control** — private GitHub repo, personal data excluded
 - **Dependencies locked** via `pyproject.toml` + `uv.lock`
 
+- **56 tests** over the three pure-logic modules (`uv run pytest`)
+
 ### What's Broken or Incomplete
-- 🔴 **First-run zombie process:** on a machine with no saved profile, closing the
-  Settings window without saving leaves an invisible process with no UI and no tray
-  icon — only Task Manager can kill it. Will be hit when setting up a second computer.
-- 🟠 **Font scaling not restored on launch:** a resized window returns at the right
-  size but with default-size text until the grip is nudged.
-- 🟠 **`settings.json` writes are not atomic:** a crash or OneDrive sync landing
-  mid-write corrupts the file, and the loader has no error handling, so the next
-  launch dies silently. Would lose the stored death date.
+Nothing serious. Remaining items are all cosmetic or low-priority:
+
 - 🟡 Boot-startup checkbox swallows all failures silently — no feedback if it fails
-- 🟡 Countdown displays 365-day years while the math uses 365.25
+- 🟡 Countdown displays 365-day years while the math uses 365.25 (a few days' cosmetic difference)
 - 🟡 `widget.is_visible()` is dead code; Settings has no Cancel button
-- No test suite
 - No confirmation dialog when exiting (minor — low priority)
 - Always-on-top does not work over exclusive-fullscreen games (Windows OS limitation, not fixable)
+
+### Fixed This Session
+- ✅ **First-run zombie process** — dismissing Settings on a machine with no profile
+  left an invisible, unkillable-except-Task-Manager process. Was on the path for
+  setting up a second computer.
+- ✅ **Font scaling on launch** — a resized window came back with default-size text
+- ✅ **Atomic `settings.json` writes** — plus fallback if the file is ever corrupt
+- ✅ **Widget drift** — saved x of -27 was rewritten to 0 every launch
+- ✅ **Death date reproducibility** — same inputs now give the same answer
 
 ---
 
 ## What We're Doing Now
 
-Version control and reproducibility are done. Next up is fixing the three bugs
-found in review (zombie process, font scaling, atomic writes) and adding a test
-suite over the pure calculation functions.
+Nothing outstanding. All review findings are fixed, tested, and pushed. The two
+things waiting on you:
+
+1. **Restart the widget** to pick up the fixes (exit from the tray, run `run.pyw`)
+2. **Run `uv sync`** while it's closed, to bring `.venv` in line with the lockfile
+
+After that it's optional polish only — a desktop shortcut, and re-checking the
+widget size now that fonts scale properly.
 
 ---
 
@@ -76,13 +89,16 @@ suite over the pure calculation functions.
 2. [x] Set up git and a private GitHub repo
 3. [x] Migrate from bare `requirements.txt` to `pyproject.toml` + `uv.lock`
 4. [x] Fix the window drift and the death-date reproducibility bug
-5. [ ] Fix the first-run zombie process
-6. [ ] Restore font scaling on launch
-7. [ ] Make `settings.json` writes atomic and handle a corrupt file
-8. [ ] Add a pytest suite over `life_expectancy` / `ssa_life_table`
-9. [ ] Delete the now-redundant `requirements.txt` and `death_clock_archive/`
-10. [ ] Desktop shortcut to `run.pyw` for easy daily launching
-11. [ ] Tweak styling — revisit after the font-scaling fix
+5. [x] Fix the first-run zombie process
+6. [x] Restore font scaling on launch
+7. [x] Make `settings.json` writes atomic and handle a corrupt file
+8. [x] Add a pytest suite (56 tests over config / life_expectancy / ssa_life_table)
+9. [x] Delete the now-redundant `requirements.txt` and `death_clock_archive/`
+10. [ ] **Restart the widget** — the running instance is still pre-fix code
+11. [ ] **Run `uv sync`** with the app closed, to sync `.venv` with the lockfile
+12. [ ] Desktop shortcut to `run.pyw` for easy daily launching
+13. [ ] Re-check widget size now that fonts scale on launch
+14. [ ] Optional: the four 🟡 cosmetic items above
 
 ---
 
@@ -102,7 +118,7 @@ suite over the pure calculation functions.
 | `death_clock/life_expectancy.py` | Actuarial calculation — called only when user saves settings |
 | `death_clock/ssa_life_table.py` | SSA 2021 life table data (male/female by age) |
 | `death_clock/startup.py` | Windows Registry boot startup registration |
-| `death_clock_archive/` | Old code — **redundant now that git holds history; slated for deletion** |
+| `tests/` | 56 pytest tests over the non-GUI modules |
 
 ---
 
@@ -113,6 +129,10 @@ suite over the pure calculation functions.
 - **Pressing Save will move the stored date ~10.5 months earlier** (2067-07-12 → ~2066-08-26). The old value was inflated by the drift bug, not by the fix.
 - **Never run `uv sync` while the widget is running** — Windows can't replace files a live process holds open. Exit via the tray first.
 - Use `uv run python -m death_clock.main` to run during development
+- Run the tests with `uv run pytest`. To run them without touching `.venv` while
+  the widget is live: `uv run --no-project --with pytest pytest`
+- `callable` is a builtin function, not a type — `callable | None` in a function
+  signature raises TypeError at import and stops the app booting
 - Double-click `run.pyw` for a clean no-console launch
 - Always-on-top does NOT work over exclusive-fullscreen games (Windows OS limitation — nothing can)
 - Brian is learning to code — explain changes in plain language and comment the code
@@ -135,8 +155,21 @@ suite over the pure calculation functions.
 - **Migrated to uv:** `pyproject.toml` + `uv.lock` replace unpinned `requirements.txt`.
   Caught that unbounded constraints would have upgraded customtkinter 5.2.2 → 6.0.0.
 - Added `README.md` and `settings.example.json`
-- Code review surfaced three more bugs (zombie process, font scaling, atomic writes)
-  and identified `requirements.txt` / `death_clock_archive/` as redundant
+- Code review surfaced three more bugs — **all now fixed, each in its own commit**:
+  - **First-run zombie process:** dismissing the Settings window on a machine with
+    no profile left an invisible process with no widget, no tray icon and no
+    console. Verified fixed by driving the real window's close handler.
+  - **Font scaling:** `_scale_fonts()` only ran while dragging the grip, so a
+    resized window returned with default-size text. *Visible change: a 280x90
+    window now renders the countdown at font 17 rather than 26.*
+  - **Atomic writes:** `settings.json` is now written via a temp file and
+    `os.replace()`, with a fallback to defaults (and a preserved `.corrupt` copy)
+    if the file is ever unreadable.
+- **Added 56 tests** over `config`, `life_expectancy` and `ssa_life_table`. Writing
+  them caught a bad type annotation (`callable | None`) that would have stopped the
+  app booting, and corrected an overstated claim about residual drift.
+- **Deleted** `death_clock_archive/`, `run_archive.pyw` and `requirements.txt` —
+  all recoverable from the initial commit via `git show a72aa1a:<path>`
 
 ### 2026-04-05 (session 2)
 - Completed all user acceptance tests:
