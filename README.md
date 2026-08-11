@@ -75,9 +75,11 @@ earlier version looked the table up at your whole-number age while measuring age
 continuously, which made the result drift ~1 day later per day and then jump
 ~11 months backwards on each birthday.
 
-A small drift remains by design: having survived another year genuinely raises
-your expected total lifespan. Recalculating five years from now moves the date
-about 10 days. That's real actuarial signal, not a bug.
+A slow drift remains by design: having survived another year genuinely raises
+your expected total lifespan, and the effect compounds with age. Recalculating
+five years later moves the date by anywhere from a few days to a few months,
+depending on your factor mix. That's real actuarial signal, not a bug — what's
+gone is the discontinuity.
 
 ---
 

@@ -24,3 +24,15 @@ dependencies = [
 # `package = false` tells uv to install the dependencies above without trying
 # to build death_clock/ into an installable package -- no build backend needed.
 package = false
+
+# Tools needed to work on the app, but not to run it.
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+# Lets the tests do `from death_clock import config` while death_clock/ sits at
+# the project root rather than being an installed package.
+pythonpath = ["."]
+testpaths = ["tests"]
