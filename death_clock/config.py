@@ -45,17 +45,8 @@ DEFAULT_CONFIG = {
 }
 
 
-def load_config() -> dict:
-    """Load settings from disk. Returns defaults if file doesn't exist."""
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r") as f:
-            saved = json.load(f)
-        # Merge with defaults so any new keys we add in the future are included
-        merged = {**DEFAULT_CONFIG, **saved}
-        merged["factors"] = {**DEFAULT_CONFIG["factors"], **saved.get("factors", {})}
-        merged["window"] = {**DEFAULT_CONFIG["window"], **saved.get("window", {})}
-        return merged
-    # No file yet — return fresh defaults
+def _fresh_defaults() -> dict:
+    """Return a brand-new copy of the defaults, safe to modify."""
     return {
         **DEFAULT_CONFIG,
         "factors": {**DEFAULT_CONFIG["factors"]},
@@ -63,10 +54,63 @@ def load_config() -> dict:
     }
 
 
+def load_config() -> dict:
+    """
+    Load settings from disk. Returns defaults if the file doesn't exist.
+
+    If the file exists but can't be read (corrupt JSON, bad permissions), we
+    fall back to defaults rather than raising. That matters because the app
+    runs under pythonw.exe with no console: an uncaught exception here would
+    kill it at startup with nothing shown on screen at all. Falling back means
+    the Settings window opens instead, which is recoverable.
+
+    The damaged file is kept as settings.json.corrupt so nothing is lost --
+    the death date may well still be readable inside it by hand.
+    """
+    if not os.path.exists(CONFIG_PATH):
+        return _fresh_defaults()
+
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        if not isinstance(saved, dict):
+            raise ValueError("settings.json does not contain a JSON object")
+    except (json.JSONDecodeError, ValueError, OSError, UnicodeDecodeError):
+        try:
+            os.replace(CONFIG_PATH, CONFIG_PATH + ".corrupt")
+        except OSError:
+            pass  # Couldn't preserve it — still better to start than to crash
+        return _fresh_defaults()
+
+    # Merge with defaults so any new keys we add in the future are included
+    merged = {**DEFAULT_CONFIG, **saved}
+    merged["factors"] = {**DEFAULT_CONFIG["factors"], **saved.get("factors", {})}
+    merged["window"] = {**DEFAULT_CONFIG["window"], **saved.get("window", {})}
+    return merged
+
+
 def save_config(config: dict) -> None:
-    """Save settings to disk."""
-    with open(CONFIG_PATH, "w") as f:
+    """
+    Save settings to disk, atomically.
+
+    Writing straight to settings.json meant truncating it first and then
+    filling it back in. Anything interrupting that gap -- a crash, a power
+    cut, OneDrive syncing the folder mid-write -- left a half-written file,
+    and settings.json is the only copy of your death date.
+
+    So we write the new contents to a temporary file alongside it, flush all
+    the way down to the physical disk, and then rename it into place.
+    os.replace() is atomic on Windows and POSIX alike: any reader sees either
+    the complete old file or the complete new one, never a partial write.
+    """
+    temp_path = CONFIG_PATH + ".tmp"
+
+    with open(temp_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
+        f.flush()          # Push Python's buffer into the OS
+        os.fsync(f.fileno())  # Push the OS buffer onto the actual disk
+
+    os.replace(temp_path, CONFIG_PATH)  # Atomic swap
 
 
 def get_death_datetime(config: dict) -> datetime | None:
