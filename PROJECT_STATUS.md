@@ -53,14 +53,21 @@ Nothing serious. Remaining items are all cosmetic or low-priority:
 
 ## What We're Doing Now
 
-Nothing outstanding. All review findings are fixed, tested, and pushed. The two
-things waiting on you:
+Nothing outstanding. All review findings are fixed, tested, and pushed.
+`uv sync` has been run — `.venv` now matches the lockfile (pillow 12.3.0,
+packaging 26.3, plus the pytest dev group).
+
+One thing still waiting on you:
 
 1. **Restart the widget** to pick up the fixes (exit from the tray, run `run.pyw`)
-2. **Run `uv sync`** while it's closed, to bring `.venv` in line with the lockfile
 
 After that it's optional polish only — a desktop shortcut, and re-checking the
 widget size now that fonts scale properly.
+
+> **Note on `uv sync` output:** it warns "Failed to hardlink files; falling back
+> to full copy." That is expected and harmless — the uv cache and this OneDrive
+> folder are on different filesystems, so uv copies instead of hardlinking.
+> Setting `link-mode = "copy"` under `[tool.uv]` would silence it.
 
 ---
 
@@ -95,7 +102,7 @@ widget size now that fonts scale properly.
 8. [x] Add a pytest suite (56 tests over config / life_expectancy / ssa_life_table)
 9. [x] Delete the now-redundant `requirements.txt` and `death_clock_archive/`
 10. [ ] **Restart the widget** — the running instance is still pre-fix code
-11. [ ] **Run `uv sync`** with the app closed, to sync `.venv` with the lockfile
+11. [x] **Run `uv sync`** with the app closed, to sync `.venv` with the lockfile
 12. [ ] Desktop shortcut to `run.pyw` for easy daily launching
 13. [ ] Re-check widget size now that fonts scale on launch
 14. [ ] Optional: the four 🟡 cosmetic items above
