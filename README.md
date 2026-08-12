@@ -53,6 +53,11 @@ the file's shape without any personal data.
 To move your exact countdown to another computer, copy `settings.json` across by
 hand. Cloning the repo alone won't do it — see below.
 
+Copy the file in **before** the first launch. If it isn't there, the app assumes
+you're a new user and opens first-run Settings. Once it is in place you can open
+Settings freely — changing only a preference like "launch at login" leaves the
+stored death date exactly as it was.
+
 ---
 
 ## How the countdown works
@@ -60,12 +65,20 @@ hand. Cloning the repo alone won't do it — see below.
 The important design rule: **the death date is calculated once and stored.**
 
 1. You press Save in Settings.
-2. `life_expectancy.compute_death_datetime()` runs — the only place it ever runs.
+2. `life_expectancy.compute_death_datetime()` runs — the only place it ever runs
+   — and only if your date of birth, sex or factors actually changed.
 3. The result is written to `settings.json` as `death_datetime_iso`.
 4. Every launch after that just reads that stored value and subtracts `now`.
 
 This is why closing and reopening the app doesn't reset your countdown. Nothing
 recalculates on startup.
+
+Step 2's condition matters on a second computer. The calculation reads today's
+clock, so running it again months later gives a slightly different answer — you
+are genuinely older. Without the check, opening Settings just to tick a checkbox
+would quietly replace a death date you had deliberately carried across. Save now
+keeps the stored date whenever the actuarial inputs are untouched, and says
+"Death date unchanged" so you can see which happened.
 
 ### Reproducibility
 

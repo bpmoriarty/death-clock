@@ -167,3 +167,92 @@ def test_missing_death_date_key_returns_none():
 )
 def test_has_profile_checks_for_a_real_date_of_birth(dob, expected):
     assert config.has_profile({"date_of_birth": dob}) is expected
+
+
+# ── Deciding whether to recalculate ───────────────────────────────────────────
+#
+# stored_date_matches_inputs() is what stops pressing Save from moving your
+# death date when you only came in to tick a checkbox. It returns True when the
+# stored date was calculated from exactly these inputs and should be kept.
+
+SAVED = {
+    "date_of_birth": "1986-05-30",
+    "sex": "male",
+    "death_datetime_iso": "2066-08-26T12:01:17.204457",
+    "factors": {"sedentary": True, "regular_exercise": True, "obesity": False},
+}
+
+SAME_FACTORS = {"sedentary": True, "regular_exercise": True, "obesity": False}
+
+
+def test_untouched_inputs_keep_the_stored_date():
+    """The copy-to-a-new-computer case: nothing changed, so nothing recalculates."""
+    assert config.stored_date_matches_inputs(
+        SAVED, "1986-05-30", "male", SAME_FACTORS
+    ) is True
+
+
+def test_a_new_date_of_birth_forces_a_recalculation():
+    assert config.stored_date_matches_inputs(
+        SAVED, "1986-05-31", "male", SAME_FACTORS
+    ) is False
+
+
+def test_a_new_sex_forces_a_recalculation():
+    assert config.stored_date_matches_inputs(
+        SAVED, "1986-05-30", "female", SAME_FACTORS
+    ) is False
+
+
+def test_toggling_any_factor_forces_a_recalculation():
+    changed = {**SAME_FACTORS, "obesity": True}
+    assert config.stored_date_matches_inputs(
+        SAVED, "1986-05-30", "male", changed
+    ) is False
+
+
+def test_turning_a_factor_off_forces_a_recalculation():
+    changed = {**SAME_FACTORS, "sedentary": False}
+    assert config.stored_date_matches_inputs(
+        SAVED, "1986-05-30", "male", changed
+    ) is False
+
+
+def test_a_factor_absent_from_the_saved_file_counts_as_off():
+    """
+    A settings.json written before a factor existed simply lacks the key.
+    Leaving that factor unticked must still count as 'unchanged'.
+    """
+    older_file = {**SAVED, "factors": {"sedentary": True, "regular_exercise": True}}
+    assert config.stored_date_matches_inputs(
+        older_file, "1986-05-30", "male", SAME_FACTORS
+    ) is True
+
+    # ...but ticking it is a real change.
+    assert config.stored_date_matches_inputs(
+        older_file, "1986-05-30", "male", {**SAME_FACTORS, "obesity": True}
+    ) is False
+
+
+def test_factors_we_no_longer_use_do_not_force_a_recalculation():
+    """An obsolete key left in the file is irrelevant to today's calculation."""
+    with_junk = {**SAVED, "factors": {**SAME_FACTORS, "astrological_sign": True}}
+    assert config.stored_date_matches_inputs(
+        with_junk, "1986-05-30", "male", SAME_FACTORS
+    ) is True
+
+
+@pytest.mark.parametrize("stored", ["", "not a date"])
+def test_no_usable_stored_date_means_recalculate(stored):
+    """Nothing worth preserving, so the answer is always to calculate afresh."""
+    cfg = {**SAVED, "death_datetime_iso": stored}
+    assert config.stored_date_matches_inputs(
+        cfg, "1986-05-30", "male", SAME_FACTORS
+    ) is False
+
+
+def test_first_run_recalculates():
+    """An empty config has no stored date and no profile to compare against."""
+    assert config.stored_date_matches_inputs(
+        {}, "1986-05-30", "male", SAME_FACTORS
+    ) is False

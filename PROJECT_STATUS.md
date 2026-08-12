@@ -11,11 +11,12 @@ A desktop app that counts down to an estimated death date using SSA actuarial li
 
 **Last Session:** 2026-08-11
 
-**Overall Health:** 🟢 Working — in continuous daily use, now with 56 tests
+**Overall Health:** 🟢 Working — in continuous daily use, now with 66 tests
 
-> ⚠️ **The widget currently running is still the old code.** It has been up since
-> 2026-07-31 and holds the pre-fix version in memory. Exit it from the tray and
-> relaunch `run.pyw` to pick up today's fixes.
+> ⚠️ **The running widget predates the Save fix.** It was relaunched earlier
+> today and is showing the correct date, so this is not urgent — but Settings
+> in that instance will still recalculate on every Save. Restart it when
+> convenient.
 
 ### What's Working
 - Always-on-top countdown widget (gray background, green numerals)
@@ -29,7 +30,10 @@ A desktop app that counts down to an estimated death date using SSA actuarial li
 - **Now under version control** — private GitHub repo, personal data excluded
 - **Dependencies locked** via `pyproject.toml` + `uv.lock`
 
-- **56 tests** over the three pure-logic modules (`uv run pytest`)
+- **66 tests** over the three pure-logic modules (`uv run pytest`)
+- Save only recalculates the death date when DOB, sex or factors actually
+  changed — so carrying `settings.json` to another machine survives a visit to
+  Settings
 
 ### What's Broken or Incomplete
 Nothing serious. Remaining items are all cosmetic or low-priority:
@@ -55,11 +59,12 @@ Nothing serious. Remaining items are all cosmetic or low-priority:
 
 Nothing outstanding. All review findings are fixed, tested, and pushed.
 `uv sync` has been run — `.venv` now matches the lockfile (pillow 12.3.0,
-packaging 26.3, plus the pytest dev group).
+packaging 26.3, plus the pytest dev group). The widget was relaunched on the
+fixed code and the corrected death date (2066-08-26) is saved and displaying.
 
 One thing still waiting on you:
 
-1. **Restart the widget** to pick up the fixes (exit from the tray, run `run.pyw`)
+1. **Restart the widget once more** to pick up the Save fix (item 12)
 
 After that it's optional polish only — a desktop shortcut, and re-checking the
 widget size now that fonts scale properly.
@@ -75,6 +80,7 @@ widget size now that fonts scale properly.
 
 | Date | Decision | Why |
 |------|----------|-----|
+| 2026-08-11 | Save keeps the stored date when inputs are unchanged | The registry entry for launch-at-login is per-machine, so a copied `settings.json` shows the box ticked with no entry behind it. Fixing that meant pressing Save, which silently recalculated the carried-over death date |
 | 2026-08-11 | Set up git + private GitHub repo | No version control existed at all; the only safety net was a manual `death_clock_archive/` copy |
 | 2026-08-11 | `settings.json` excluded from git | Holds date of birth and health conditions; `settings.example.json` documents its shape instead |
 | 2026-08-11 | Repo is private | Personal nature of the app; can be flipped public later |
@@ -99,13 +105,15 @@ widget size now that fonts scale properly.
 5. [x] Fix the first-run zombie process
 6. [x] Restore font scaling on launch
 7. [x] Make `settings.json` writes atomic and handle a corrupt file
-8. [x] Add a pytest suite (56 tests over config / life_expectancy / ssa_life_table)
+8. [x] Add a pytest suite (66 tests over config / life_expectancy / ssa_life_table)
 9. [x] Delete the now-redundant `requirements.txt` and `death_clock_archive/`
-10. [ ] **Restart the widget** — the running instance is still pre-fix code
+10. [x] **Restart the widget** — running the fixed code, date saved and confirmed
 11. [x] **Run `uv sync`** with the app closed, to sync `.venv` with the lockfile
-12. [ ] Desktop shortcut to `run.pyw` for easy daily launching
-13. [ ] Re-check widget size now that fonts scale on launch
-14. [ ] Optional: the four 🟡 cosmetic items above
+12. [x] Stop Save from clobbering a carried-over death date
+13. [ ] Restart the widget again to pick up the Save fix
+14. [ ] Desktop shortcut to `run.pyw` for easy daily launching
+15. [ ] Re-check widget size now that fonts scale on launch
+16. [ ] Optional: the four 🟡 cosmetic items above
 
 ---
 
@@ -125,7 +133,7 @@ widget size now that fonts scale properly.
 | `death_clock/life_expectancy.py` | Actuarial calculation — called only when user saves settings |
 | `death_clock/ssa_life_table.py` | SSA 2021 life table data (male/female by age) |
 | `death_clock/startup.py` | Windows Registry boot startup registration |
-| `tests/` | 56 pytest tests over the non-GUI modules |
+| `tests/` | 66 pytest tests over the non-GUI modules |
 
 ---
 
@@ -133,7 +141,14 @@ widget size now that fonts scale properly.
 
 - The death date must NEVER be recalculated on app launch — only when the user explicitly saves settings
 - `death_datetime_iso` in settings.json is the source of truth for the countdown
-- **Pressing Save will move the stored date ~10.5 months earlier** (2067-07-12 → ~2066-08-26). The old value was inflated by the drift bug, not by the fix.
+- The stored date is now **2066-08-26** (saved 2026-08-11). The earlier
+  2067-07-12 was inflated by the drift bug; the correction has been applied.
+- **Pressing Save no longer recalculates unless DOB, sex or factors changed.**
+  `config.stored_date_matches_inputs()` gates it. This is what makes copying
+  `settings.json` to a second computer safe.
+- `age_float` uses `(now - dob).days`, a whole number — so the calculation is
+  byte-identical within a single calendar day, and drifts only across days
+  (~3 days per 6 months at Brian's factor mix)
 - **Never run `uv sync` while the widget is running** — Windows can't replace files a live process holds open. Exit via the tray first.
 - Use `uv run python -m death_clock.main` to run during development
 - Run the tests with `uv run pytest`. To run them without touching `.venv` while
@@ -177,6 +192,14 @@ widget size now that fonts scale properly.
   app booting, and corrected an overstated claim about residual drift.
 - **Deleted** `death_clock_archive/`, `run_archive.pyw` and `requirements.txt` —
   all recoverable from the initial commit via `git show a72aa1a:<path>`
+- Relaunched the widget on the fixed code; pressed Save; confirmed the corrected
+  date (2066-08-26) is showing. Ran `uv sync` — the "failed to hardlink" warning
+  it prints is expected inside OneDrive and harmless.
+- **Fixed Save clobbering a carried-over date.** Found while writing up the
+  move-to-a-new-computer instructions: the launch-at-login registry entry is
+  per-machine, so the one thing you must press Save for on a second computer was
+  also the thing that would overwrite the date you copied there. Save now
+  recalculates only when DOB, sex or factors changed. Ten new tests; 66 total.
 
 ### 2026-04-05 (session 2)
 - Completed all user acceptance tests:

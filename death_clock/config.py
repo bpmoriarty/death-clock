@@ -131,3 +131,41 @@ def get_death_datetime(config: dict) -> datetime | None:
 def has_profile(config: dict) -> bool:
     """Return True if the user has filled in their date of birth."""
     return bool(config.get("date_of_birth", "").strip())
+
+
+def stored_date_matches_inputs(
+    config: dict, date_of_birth: str, sex: str, factors: dict
+) -> bool:
+    """
+    Return True if the stored death date was calculated from these exact inputs.
+
+    Why this exists: compute_death_datetime() reads the clock. Feeding it the
+    same date of birth, sex and factors on a different day gives a different
+    answer, because you are genuinely older -- the estimate slides gradually
+    later as you survive. That is correct behaviour for a real change of
+    profile, but it makes pressing Save destructive when nothing changed.
+
+    The case that bit us: copy settings.json to a second computer, open
+    Settings only to tick "launch at login", press Save -- and the carried-over
+    death date is silently replaced with a freshly calculated one.
+
+    So Save now asks this first. If the actuarial inputs are untouched, the
+    stored date is kept as-is and only the preferences around it are written.
+
+    Returns False if there is no stored date, or if it is unreadable -- both
+    mean we have nothing worth preserving and should calculate afresh.
+    """
+    if get_death_datetime(config) is None:
+        return False
+
+    if date_of_birth != config.get("date_of_birth"):
+        return False
+
+    if sex != config.get("sex"):
+        return False
+
+    # Compare only the factors the settings window actually manages. An older
+    # settings.json may carry keys we have since dropped; those are irrelevant
+    # to the current calculation and must not force a needless recalculation.
+    stored_factors = config.get("factors", {})
+    return all(stored_factors.get(key, False) == value for key, value in factors.items())

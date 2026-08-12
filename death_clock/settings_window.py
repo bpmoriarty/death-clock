@@ -4,8 +4,10 @@ Settings window for Death Clock.
 This is where you enter your date of birth, sex, and health/lifestyle factors.
 When you click Save, it:
 1. Validates your inputs
-2. Recalculates your estimated death date using the actuarial engine
-3. Saves everything to settings.json (including the new death date)
+2. Recalculates your estimated death date using the actuarial engine --
+   but only if the date of birth, sex or factors actually changed. Saving
+   with those untouched keeps the stored date exactly as it was.
+3. Saves everything to settings.json
 4. Tells the countdown widget to update immediately
 
 Built with CustomTkinter for a cleaner look than plain tkinter.
@@ -16,7 +18,7 @@ from datetime import datetime
 from tkinter import messagebox
 
 from .life_expectancy import compute_death_datetime, FACTOR_LABELS
-from .config import save_config
+from .config import save_config, get_death_datetime, stored_date_matches_inputs
 
 
 # Match the rest of the app's dark theme
@@ -245,10 +247,22 @@ class SettingsWindow:
         factors = {key: var.get() for key, var in self.factor_vars.items()}
         start_on_boot = self.startup_var.get()
 
-        # ── Recalculate death date ─────────────────────────────────────────
+        # ── Recalculate death date, but only if it needs it ────────────────
         # This is the ONE place we recalculate. The result gets saved to
         # settings.json and reused on every future launch.
-        death_dt = compute_death_datetime(dob, sex, factors)
+        #
+        # We check the existing config BEFORE overwriting it below. If the date
+        # of birth, sex and factors are all unchanged, the stored date already
+        # answers this exact question and we keep it untouched -- otherwise
+        # saving a preference like "launch at login" would quietly move your
+        # death date, since the calculation reads today's clock.
+        keeping_stored_date = stored_date_matches_inputs(
+            self.config, dob_str, sex, factors
+        )
+        if keeping_stored_date:
+            death_dt = get_death_datetime(self.config)
+        else:
+            death_dt = compute_death_datetime(dob, sex, factors)
 
         # ── Update config ──────────────────────────────────────────────────
         self.config["date_of_birth"]    = dob_str
@@ -274,9 +288,13 @@ class SettingsWindow:
         # ── Notify the app ─────────────────────────────────────────────────
         self.on_save(self.config, death_dt)
 
-        # Update the reference label to show the new death date
-        self.ref_label.configure(
-            text=f"Saved! Death date: {death_dt.strftime('%B %d, %Y')}"
-        )
+        # Update the reference label to show the death date, and say plainly
+        # whether it was recalculated -- otherwise "Saved!" next to an
+        # unchanged date looks like the save silently failed.
+        if keeping_stored_date:
+            message = f"Saved. Death date unchanged: {death_dt.strftime('%B %d, %Y')}"
+        else:
+            message = f"Saved! Death date: {death_dt.strftime('%B %d, %Y')}"
+        self.ref_label.configure(text=message)
 
         self.win.after(1500, self.win.destroy)
