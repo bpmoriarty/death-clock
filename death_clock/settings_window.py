@@ -1,25 +1,15 @@
-"""
-Settings window for Death Clock.
+"""Explicit reminder target selection, profile restore, and local login controls."""
 
-This is where you enter your date of birth, sex, and health/lifestyle factors.
-When you click Save, it:
-1. Validates your inputs
-2. Recalculates your estimated death date using the actuarial engine --
-   but only if the date of birth, sex or factors actually changed. Saving
-   with those untouched keeps the stored date exactly as it was.
-3. Saves everything to settings.json
-4. Tells the countdown widget to update immediately
-
-Built with CustomTkinter for a cleaner look than plain tkinter.
-"""
-
-from copy import deepcopy
+from collections.abc import Callable
 import customtkinter as ctk
 from datetime import datetime
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 
-from .life_expectancy import compute_death_datetime, FACTOR_LABELS
-from .config import commit_config, get_death_datetime, stored_date_matches_inputs
+from .factors import FACTOR_LABELS, RISK_FACTORS, PROTECTIVE_FACTORS
+from .config import get_death_datetime
+from .targets import MODES, propose_target
+from .storage import commit_settings as commit_config, export_profile, read_export, restore_profile
+from .startup import is_registered
 
 
 # Match the rest of the app's dark theme
@@ -27,32 +17,10 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("green")
 
 
-# Which factors to show in the settings window, grouped by type
-RISK_FACTORS = [
-    "current_smoker",
-    "former_smoker",
-    "obesity",
-    "sedentary",
-    "heavy_drinking",
-    "diabetes",
-]
-
-PROTECTIVE_FACTORS = [
-    "regular_exercise",
-    "mediterranean_diet",
-    "college_degree",
-    "married",
-]
-
-
 class SettingsWindow:
     """Modal window for editing health profile and preferences."""
 
-    # Note: on_close has no type annotation on purpose. The rest of this file
-    # uses `callable` as a shorthand hint, but `callable` is a builtin function
-    # rather than a real type, so writing `callable | None` raises a TypeError
-    # when Python evaluates the signature -- which would stop the app booting.
-    def __init__(self, parent, config: dict, on_save: callable, on_close=None):
+    def __init__(self, parent, config: dict, on_save: Callable, on_close: Callable | None = None):
         """
         Args:
             parent:   The tkinter root (used as parent for the modal)
@@ -73,7 +41,7 @@ class SettingsWindow:
         # Create the settings window
         self.win = ctk.CTkToplevel(parent)
         self.win.title("Death Clock — Settings")
-        self.win.resizable(False, False)
+        self.win.resizable(True, True)
         self.win.grab_set()  # Make it modal (blocks interaction with the widget)
 
         # Keep it on top while open
@@ -88,132 +56,95 @@ class SettingsWindow:
 
         # Center on screen
         self.win.update_idletasks()
-        w = self.win.winfo_width()
-        h = self.win.winfo_height()
+        w = min(520, self.win.winfo_screenwidth() - 40)
+        h = min(680, self.win.winfo_screenheight() - 100)
         sw = self.win.winfo_screenwidth()
         sh = self.win.winfo_screenheight()
-        self.win.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        self.win.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
     def _build_ui(self):
-        """Build all the form elements."""
-        pad = {"padx": 20}  # pady set per-element to avoid "multiple values" error
-
-        # ── Header ────────────────────────────────────────────────────────────
-        ctk.CTkLabel(
-            self.win,
-            text="Your Health Profile",
-            font=("Consolas", 16, "bold"),
-        ).pack(**pad, pady=(16, 4))
-
-        ctk.CTkLabel(
-            self.win,
-            text="This information is used to estimate your death date.\n"
-                 "Your saved target changes only when you confirm a new one.",
-            font=("Consolas", 11),
-            text_color="#aaaaaa",
-            justify="center",
-        ).pack(**pad, pady=6)
-
-        # ── Date of Birth ─────────────────────────────────────────────────────
-        ctk.CTkLabel(self.win, text="Date of Birth (YYYY-MM-DD)",
-                     font=("Consolas", 12)).pack(**pad, pady=(14, 2))
-
-        self.dob_entry = ctk.CTkEntry(
-            self.win, width=200,
-            placeholder_text="e.g. 1986-05-30",
-            font=("Consolas", 13),
-        )
-        self.dob_entry.pack(**pad, pady=(0, 6))
-        if self.config.get("date_of_birth"):
-            self.dob_entry.insert(0, self.config["date_of_birth"])
-
-        # ── Sex ───────────────────────────────────────────────────────────────
-        ctk.CTkLabel(self.win, text="Biological Sex (affects SSA life table lookup)",
-                     font=("Consolas", 12)).pack(**pad, pady=(4, 2))
-
+        """Keep actions visible while the input area scrolls."""
+        self.body = ctk.CTkScrollableFrame(self.win, width=440, height=390)
+        self.body.pack(fill="both", expand=True, padx=12, pady=12)
+        ctk.CTkLabel(self.body, text="Choose your reminder target",
+                     font=("Consolas", 16, "bold")).pack(pady=8)
+        ctk.CTkLabel(self.body, text="Your saved countdown stays unchanged unless you confirm a new target.",
+                     wraplength=400).pack(pady=6)
+        self.target_mode = ctk.StringVar(value="Keep saved target" if get_death_datetime(self.config)
+                                        else "Choose a date")
+        ctk.CTkOptionMenu(self.body, values=list(MODES), variable=self.target_mode,
+                           command=self._show_target_fields, width=280).pack(pady=8)
+        self.date_frame = ctk.CTkFrame(self.body)
+        ctk.CTkLabel(self.date_frame, text="Target date (YYYY-MM-DD), at midnight").pack(padx=12, pady=6)
+        self.target_entry = ctk.CTkEntry(self.date_frame, placeholder_text="e.g. 2080-06-15", width=220)
+        self.target_entry.pack(padx=12, pady=6)
+        self.age_frame = ctk.CTkFrame(self.body)
+        ctk.CTkLabel(self.age_frame, text="Target age (whole years, 1–150)").pack(padx=12, pady=6)
+        self.age_entry = ctk.CTkEntry(self.age_frame, width=220)
+        self.age_entry.pack(padx=12, pady=6)
+        ctk.CTkLabel(self.age_frame, text="Uses midnight on that birthday; Feb 29 becomes Feb 28 in non-leap years.",
+                     wraplength=380).pack(padx=12, pady=6)
+        self.profile_frame = ctk.CTkFrame(self.body)
+        ctk.CTkLabel(self.profile_frame, text="Birth date (YYYY-MM-DD)").pack(padx=12, pady=6)
+        self.dob_entry = ctk.CTkEntry(self.profile_frame, width=220)
+        self.dob_entry.pack(padx=12, pady=6)
+        self.dob_entry.insert(0, self.config.get("date_of_birth", ""))
+        self.legacy_frame = ctk.CTkFrame(self.body)
+        ctk.CTkLabel(self.legacy_frame, text="Optional legacy calculation",
+                     font=("Consolas", 14, "bold")).pack(pady=8)
+        ctk.CTkLabel(self.legacy_frame, text="An approximate, unvalidated reminder formula—not a personal "
+                     "longevity prediction. Its table and factor adjustments have not been verified. "
+                     "A new calculation depends on today's date. You will preview it before saving.",
+                     wraplength=380, text_color="#cccccc").pack(padx=12, pady=6)
         self.sex_var = ctk.StringVar(value=self.config.get("sex", "male"))
-        sex_frame = ctk.CTkFrame(self.win, fg_color="transparent")
-        sex_frame.pack(**pad, pady=(0, 8))
-        ctk.CTkRadioButton(sex_frame, text="Male",   variable=self.sex_var,
-                           value="male",   font=("Consolas", 12)).pack(side="left", padx=12)
-        ctk.CTkRadioButton(sex_frame, text="Female", variable=self.sex_var,
-                           value="female", font=("Consolas", 12)).pack(side="left", padx=12)
-
-        # ── Risk Factors ──────────────────────────────────────────────────────
-        ctk.CTkLabel(self.win, text="Risk Factors  (shorten life expectancy)",
-                     font=("Consolas", 12, "bold"),
-                     text_color="#cc6666").pack(**pad, pady=(10, 2))
-
+        ctk.CTkOptionMenu(self.legacy_frame, variable=self.sex_var, values=["male", "female"]).pack(pady=8)
         self.factor_vars = {}
-        factors = self.config.get("factors", {})
-
-        for key in RISK_FACTORS:
-            var = ctk.BooleanVar(value=factors.get(key, False))
+        for key in RISK_FACTORS + PROTECTIVE_FACTORS:
+            var = ctk.BooleanVar(value=self.config.get("factors", {}).get(key, False))
             self.factor_vars[key] = var
-            ctk.CTkCheckBox(
-                self.win,
-                text=FACTOR_LABELS.get(key, key),
-                variable=var,
-                font=("Consolas", 12),
-            ).pack(anchor="w", padx=30, pady=2)
+            ctk.CTkCheckBox(self.legacy_frame, text=FACTOR_LABELS[key], variable=var).pack(
+                anchor="w", padx=12, pady=4)
+        self._show_target_fields()
 
-        # ── Protective Factors ────────────────────────────────────────────────
-        ctk.CTkLabel(self.win, text="Protective Factors  (extend life expectancy)",
-                     font=("Consolas", 12, "bold"),
-                     text_color="#44cc77").pack(**pad, pady=(12, 2))
+        self._startup_available = True
+        try:
+            registered = is_registered()
+        except OSError:
+            registered = False
+            self._startup_available = False
+        self.startup_var = ctk.BooleanVar(value=registered)
+        startup_checkbox = ctk.CTkCheckBox(self.win, text="Start automatically when I sign in",
+                                          variable=self.startup_var)
+        startup_checkbox.pack(padx=20, pady=6)
+        if not self._startup_available:
+            startup_checkbox.configure(state="disabled")
+            ctk.CTkLabel(self.win, text="Windows login setting could not be read.").pack()
+        transfer = ctk.CTkFrame(self.win, fg_color="transparent")
+        transfer.pack(pady=6)
+        ctk.CTkButton(transfer, text="Export countdown…", command=self._export).pack(side="left", padx=4)
+        ctk.CTkButton(transfer, text="Restore countdown…", command=self._restore).pack(side="left", padx=4)
+        self.ref_label = ctk.CTkLabel(self.win, text="Saved target: " +
+                                     (self.config.get("death_datetime_iso") or "None"),
+                                     wraplength=460, text_color="#b0b0b0")
+        self.ref_label.pack(padx=12, pady=4)
+        actions = ctk.CTkFrame(self.win, fg_color="transparent")
+        actions.pack(pady=(4, 12))
+        ctk.CTkButton(actions, text="Cancel", command=self._close, width=110).pack(side="left", padx=4)
+        self.save_button = ctk.CTkButton(actions, text="Save settings", command=self._save)
+        self.save_button.pack(side="left", padx=4)
 
-        for key in PROTECTIVE_FACTORS:
-            var = ctk.BooleanVar(value=factors.get(key, False))
-            self.factor_vars[key] = var
-            ctk.CTkCheckBox(
-                self.win,
-                text=FACTOR_LABELS.get(key, key),
-                variable=var,
-                font=("Consolas", 12),
-            ).pack(anchor="w", padx=30, pady=2)
-
-        # ── Start on Boot ─────────────────────────────────────────────────────
-        ctk.CTkLabel(self.win, text="Startup",
-                     font=("Consolas", 12, "bold")).pack(**pad, pady=(12, 2))
-
-        self.startup_var = ctk.BooleanVar(value=self.config.get("start_on_boot", False))
-        ctk.CTkCheckBox(
-            self.win,
-            text="Start Death Clock automatically when Windows boots",
-            variable=self.startup_var,
-            font=("Consolas", 12),
-        ).pack(anchor="w", padx=30, pady=2)
-
-        # ── Save Button ───────────────────────────────────────────────────────
-        self.save_button = ctk.CTkButton(
-            self.win,
-            text="Save settings",
-            command=self._save,
-            font=("Consolas", 13, "bold"),
-            height=40,
-            fg_color="#336644",
-            hover_color="#44aa66",
-        )
-        self.save_button.pack(**pad, pady=(16, 4))
-
-        # Shows the current stored death date for reference
-        stored_iso = self.config.get("death_datetime_iso", "")
-        if stored_iso:
-            try:
-                stored_dt = datetime.fromisoformat(stored_iso)
-                ref_text = f"Current death date: {stored_dt.strftime('%B %d, %Y')}"
-            except ValueError:
-                ref_text = ""
-        else:
-            ref_text = "No death date set yet — fill in the form and save."
-
-        self.ref_label = ctk.CTkLabel(
-            self.win,
-            text=ref_text,
-            font=("Consolas", 10),
-            text_color="#666666",
-        )
-        self.ref_label.pack(**pad, pady=(0, 16))
+    def _show_target_fields(self, _selection=None):
+        mode = self.target_mode.get()
+        for frame in (self.date_frame, self.age_frame, self.profile_frame, self.legacy_frame):
+            frame.pack_forget()
+        if mode == "Choose a date":
+            self.date_frame.pack(fill="x", pady=8)
+        if mode == "Choose an age":
+            self.age_frame.pack(fill="x", pady=8)
+        if mode in ("Choose an age", "Legacy calculation"):
+            self.profile_frame.pack(fill="x", pady=8)
+        if mode == "Legacy calculation":
+            self.legacy_frame.pack(fill="x", pady=8)
 
     def _close(self):
         """Handle the window's X button, telling the caller whether we saved."""
@@ -221,108 +152,89 @@ class SettingsWindow:
         if self.on_close:
             self.on_close(self._saved)
 
-    def _save(self):
-        """Validate inputs, recalculate death date, and save to disk."""
+    def _export(self):
+        path = filedialog.asksaveasfilename(parent=self.win, title="Export saved countdown",
+                                          defaultextension=".json",
+                                          initialfile="countdown.deathclock-export.json",
+                                          filetypes=[("Countdown file", "*.json")])
+        if not path:
+            return
+        try:
+            export_profile(self.config, path)
+        except (OSError, ValueError, KeyError) as error:
+            messagebox.showerror("Export failed", str(error), parent=self.win)
+            return
+        messagebox.showinfo("Countdown exported", "The saved target and profile were exported. "
+                            "This file includes your birth date and health selections; "
+                            "keep it private. Unsaved form edits were not exported.", parent=self.win)
 
+    def _restore(self):
         if self._saved:
             return
-
-        # ── Validate date of birth ─────────────────────────────────────────
-        dob_str = self.dob_entry.get().strip()
+        path = filedialog.askopenfilename(parent=self.win, title="Restore a saved countdown",
+                                         filetypes=[("Countdown file", "*.json")])
+        if not path:
+            return
         try:
-            dob = datetime.strptime(dob_str, "%Y-%m-%d")
-        except ValueError:
-            messagebox.showerror(
-                "Invalid Date",
-                "Please enter your date of birth as YYYY-MM-DD\n(e.g. 1986-05-30)",
-                parent=self.win,
-            )
-            return
-
-        # Must be in the past
-        if dob >= datetime.now():
-            messagebox.showerror(
-                "Invalid Date",
-                "Date of birth must be in the past.",
-                parent=self.win,
-            )
-            return
-
-        sex = self.sex_var.get()
-        factors = {key: var.get() for key, var in self.factor_vars.items()}
-        start_on_boot = self.startup_var.get()
-
-        # ── Recalculate death date, but only if it needs it ────────────────
-        # This is the ONE place we recalculate. The result gets saved to
-        # settings.json and reused on every future launch.
-        #
-        # We check the existing config BEFORE overwriting it below. If the date
-        # of birth, sex and factors are all unchanged, the stored date already
-        # answers this exact question and we keep it untouched -- otherwise
-        # saving a preference like "launch at login" would quietly move your
-        # death date, since the calculation reads today's clock.
-        keeping_stored_date = stored_date_matches_inputs(
-            self.config, dob_str, sex, factors
-        )
-        if keeping_stored_date:
-            death_dt = get_death_datetime(self.config)
-        else:
-            death_dt = compute_death_datetime(dob, sex, factors)
-
-        if not keeping_stored_date and get_death_datetime(self.config) is not None:
-            old_dt = get_death_datetime(self.config)
-            if not messagebox.askyesno(
-                "Change saved target?",
-                f"Current target: {old_dt:%B %d, %Y}\n"
-                f"Proposed target: {death_dt:%B %d, %Y}\n\n"
-                "Replace your saved countdown? A backup will be kept.",
-                parent=self.win,
-            ):
+            profile = read_export(path)
+            current = self.config.get("death_datetime_iso") or "None"
+            if not messagebox.askyesno("Restore countdown?",
+                    f"Current target: {current}\nRestored target: {profile['death_datetime_iso']}\n\n"
+                    "Replace the saved target and profile? A backup will be kept. "
+                    "Unsaved form edits will be discarded. This computer's placement "
+                    "and login setting stay as they are.", parent=self.win):
                 return
-
-        proposed = deepcopy(self.config)
-        proposed.update(date_of_birth=dob_str, sex=sex, factors=factors,
-                        start_on_boot=start_on_boot)
-        # Preserve the original string exactly on preference-only saves.
-        if not keeping_stored_date:
-            proposed["death_datetime_iso"] = death_dt.isoformat()
-        try:
-            commit_config(self.config, proposed)
-        except (OSError, ValueError) as error:
-            messagebox.showerror(
-                "Settings not saved",
-                "Your running countdown has not changed. Check disk space, file "
-                f"permissions, or OneDrive, then try again.\n\n{error}",
-                parent=self.win,
-            )
+            restore_profile(self.config, profile)
+        except (OSError, ValueError, KeyError) as error:
+            messagebox.showerror("Countdown not restored", str(error), parent=self.win)
             return
         self._saved = True
         self.save_button.configure(state="disabled")
+        self.on_save(self.config, get_death_datetime(self.config))
+        self.win.destroy()
 
-        # Registration is a separate Windows operation; a failure must be visible.
+    def _save(self):
+        if self._saved:
+            return
+        mode = self.target_mode.get()
         try:
-            from .startup import add_to_startup, remove_from_startup
-            if start_on_boot:
-                add_to_startup()
-            else:
-                remove_from_startup()
-        except Exception as error:
-            messagebox.showwarning(
-                "Countdown saved; Windows startup not updated",
-                f"Your target was saved, but the login setting could not be applied.\n\n{error}",
-                parent=self.win,
-            )
-
-        # ── Notify the app ─────────────────────────────────────────────────
+            proposed = propose_target(
+                self.config, mode, self.target_entry.get(), self.age_entry.get(),
+                self.dob_entry.get(), self.sex_var.get(),
+                {key: var.get() for key, var in self.factor_vars.items()})
+        except (ValueError, OverflowError) as error:
+            messagebox.showerror("Target not saved", str(error), parent=self.win)
+            return
+        if mode != "Keep saved target":
+            old = self.config.get("death_datetime_iso") or "None"
+            target = proposed["death_datetime_iso"]
+            explanation = "A backup will be kept. No change happens until you confirm."
+            if get_death_datetime(proposed) <= datetime.now():
+                explanation += "\nThis date has passed; the clock will show Make today count."
+            if not messagebox.askyesno("Confirm reminder target",
+                    f"Current target: {old}\nProposed target: {target}\n\n{explanation}",
+                    parent=self.win):
+                return
+        proposed["start_on_boot"] = self.startup_var.get()
+        try:
+            commit_config(self.config, proposed)
+        except (OSError, ValueError) as error:
+            messagebox.showerror("Settings not saved",
+                    f"Your running target is unchanged.\n\n{error}", parent=self.win)
+            return
+        self._saved = True
+        self.save_button.configure(state="disabled")
+        try:
+            if self._startup_available:
+                from .startup import add_to_startup, remove_from_startup
+                if self.startup_var.get():
+                    add_to_startup()
+                else:
+                    remove_from_startup()
+        except OSError as error:
+            messagebox.showwarning("Countdown saved; Windows startup not updated",
+                                   str(error), parent=self.win)
+        death_dt = get_death_datetime(self.config)
         self.on_save(self.config, death_dt)
-
-        # Update the reference label to show the death date, and say plainly
-        # whether it was recalculated -- otherwise "Saved!" next to an
-        # unchanged date looks like the save silently failed.
-        if keeping_stored_date:
-            message = f"Saved. Death date unchanged: {death_dt.strftime('%B %d, %Y')}"
-        else:
-            message = f"Saved! Death date: {death_dt.strftime('%B %d, %Y')}"
-        self.ref_label.configure(text=message)
-
+        self.ref_label.configure(text=f"Saved target: {self.config['death_datetime_iso']}")
         self.win.after(1500, self.win.destroy)

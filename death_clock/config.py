@@ -16,6 +16,7 @@ import tempfile
 from copy import deepcopy
 from collections.abc import Callable
 from datetime import datetime
+from .factors import FACTOR_DEFAULTS
 
 # settings.json lives in the same folder as this project (one level up from this file)
 CONFIG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -26,18 +27,7 @@ DEFAULT_CONFIG = {
     "date_of_birth": "",           # User must fill this in
     "sex": "male",
     "death_datetime_iso": "",       # Empty until user saves settings for first time
-    "factors": {
-        "current_smoker": False,
-        "former_smoker": False,
-        "obesity": False,
-        "sedentary": False,
-        "heavy_drinking": False,
-        "diabetes": False,
-        "regular_exercise": False,
-        "mediterranean_diet": False,
-        "college_degree": False,
-        "married": False,
-    },
+    "factors": FACTOR_DEFAULTS.copy(),
     "window": {
         "x": 100,
         "y": 100,
@@ -168,7 +158,7 @@ def _atomic_write(path: str, data: dict) -> None:
     fd, temporary = tempfile.mkstemp(prefix=os.path.basename(path) + ".",
                                      suffix=".tmp", dir=os.path.dirname(path))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(data, stream, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
@@ -178,7 +168,7 @@ def _atomic_write(path: str, data: dict) -> None:
             os.unlink(temporary)
 
 
-def save_config(config: dict) -> None:
+def save_config(config: dict, *, shared_only: bool = False) -> None:
     """Preserve the previous usable countdown before committing a new one.
 
     Permission/read failures propagate, preventing an unreadable original from
@@ -187,6 +177,9 @@ def save_config(config: dict) -> None:
     proposed, repaired = _normalize(config)
     if repaired:
         raise ValueError("Settings contain invalid values; nothing was saved.")
+    if shared_only:
+        for key in ("window", "opacity", "start_on_boot", "lock_position", "show_seconds", "display_mode"):
+            proposed.pop(key, None)
     previous = None
     try:
         raw = _read_object(CONFIG_PATH)
@@ -200,7 +193,7 @@ def save_config(config: dict) -> None:
     if previous is not None and get_death_datetime(previous) is not None:
         if get_death_datetime(proposed) is None:
             raise ValueError("Cannot replace a saved countdown with an empty target.")
-        _atomic_write(CONFIG_PATH + ".bak", previous)
+        _atomic_write(CONFIG_PATH + ".bak", raw if shared_only else previous)
     elif not os.path.exists(CONFIG_PATH + ".bak") and get_death_datetime(proposed) is not None:
         # A first successful setup also has a recovery copy.
         _atomic_write(CONFIG_PATH + ".bak", proposed)

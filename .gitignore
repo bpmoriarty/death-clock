@@ -32,3 +32,7 @@ Thumbs.db
 settings.json.bak
 settings.json.corrupt.*
 settings.json.*.tmp
+
+# Default portable export names also contain personal profile data
+*.deathclock-export.json
+*.deathclock-export.json.*.tmp

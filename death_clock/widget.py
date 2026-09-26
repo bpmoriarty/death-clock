@@ -17,6 +17,7 @@ import tkinter as tk
 from tkinter import font as tkfont
 from datetime import datetime
 from collections.abc import Callable
+from .countdown import format_countdown
 
 from .placement import (Placement, get_work_areas,
                         monitor_for, recover_placement, reset_placement,
@@ -27,8 +28,8 @@ from .placement import (Placement, get_work_areas,
 BG_COLOR       = "#2d2d2d"   # Dark neutral gray background
 BORDER_COLOR   = "#444444"   # Slightly lighter gray for the thin border
 TEXT_COLOR     = "#44cc77"   # Soft green for the countdown numbers
-LABEL_COLOR    = "#888888"   # Dim gray for the small "TIME REMAINING" label
-GRIP_COLOR     = "#555555"   # Gray for the resize handle triangle
+LABEL_COLOR    = "#b0b0b0"   # Readable gray for the small labels
+GRIP_COLOR     = "#999999"   # Gray for the resize handle triangle
 FONT_FAMILY    = "Consolas"  # Monospace so digits don't jump around
 
 
@@ -36,7 +37,8 @@ class CountdownWidget:
     """The floating always-on-top countdown clock."""
 
     def __init__(self, root: tk.Tk, death_datetime: datetime, config: dict,
-                 on_settings: Callable[[], None], on_exit: Callable[[], None]):
+                 on_settings: Callable[[], None], on_exit: Callable[[], None],
+                 on_display_settings: Callable[[], None] | None = None):
         """
         Args:
             root:           The tkinter root window (hidden — we use this as the anchor)
@@ -49,6 +51,7 @@ class CountdownWidget:
         self.config = config
         self.on_settings = on_settings
         self.on_exit = on_exit
+        self.on_display_settings = on_display_settings
 
         # Drag tracking
         self._drag_start_x = 0
@@ -70,6 +73,7 @@ class CountdownWidget:
         self._setup_window()
         self._build_ui()
         self._bind_events()
+        self.apply_display_preferences()
 
         # Start the countdown loop and the topmost re-assertion loop
         self._tick()
@@ -86,7 +90,7 @@ class CountdownWidget:
         self.win.attributes("-topmost", True)
 
         # Slight transparency — 0.0 = invisible, 1.0 = fully opaque
-        self.win.attributes("-alpha", 0.93)
+        self.win.attributes("-alpha", self.config.get("opacity", 0.93))
 
         self.win.configure(bg=BORDER_COLOR)
 
@@ -201,6 +205,8 @@ class CountdownWidget:
                        activebackground="#505050", activeforeground="#ffffff",
                        relief="flat", borderwidth=0)
         menu.add_command(label="Settings",  command=self.on_settings)
+        if self.on_display_settings:
+            menu.add_command(label="Display…", command=self.on_display_settings)
         menu.add_separator()
         menu.add_command(label="Hide",      command=self.hide)
         menu.add_command(label="Exit",      command=self.on_exit)
@@ -211,18 +217,24 @@ class CountdownWidget:
 
     def _drag_start(self, event):
         """Record where the drag started."""
+        if self.config.get("lock_position", False):
+            return
         self._interacting = True
         self._drag_start_x = event.x_root - self.win.winfo_x()
         self._drag_start_y = event.y_root - self.win.winfo_y()
 
     def _drag_move(self, event):
         """Move the window as the mouse drags."""
+        if self.config.get("lock_position", False):
+            return
         x = event.x_root - self._drag_start_x
         y = event.y_root - self._drag_start_y
         self.win.geometry(f"+{x}+{y}")
 
     def _drag_end(self, _event):
         """Save the new position when the drag is released."""
+        if self.config.get("lock_position", False):
+            return
         self._interacting = False
         self._recover_window()
         self._save_window_state()
@@ -231,6 +243,8 @@ class CountdownWidget:
 
     def _resize_start(self, event):
         """Record the starting point and window size for a resize operation."""
+        if self.config.get("lock_position", False):
+            return
         self._recover_window()
         self._interacting = True
         self._resize_origin = self._current_placement()
@@ -242,6 +256,8 @@ class CountdownWidget:
 
     def _resize_move(self, event):
         """Resize the window as the grip is dragged."""
+        if self.config.get("lock_position", False):
+            return
         dx = event.x_root - self._resize_start_x
         dy = event.y_root - self._resize_start_y
         placement = resize_placement(self._resize_origin,
@@ -252,6 +268,8 @@ class CountdownWidget:
 
     def _resize_end(self, _event):
         """Save the new size when resize is done."""
+        if self.config.get("lock_position", False):
+            return
         self._interacting = False
         self._recover_window()
         self._save_window_state()
@@ -260,7 +278,8 @@ class CountdownWidget:
         """Measure real text; negative Tk sizes are pixels, not scaled points."""
         countdown = self.label_countdown.cget("text")
         date_text = self.label_date.cget("text")
-        key = (width, height, countdown, date_text)
+        heading = self.label_top.cget("text")
+        key = (width, height, countdown, date_text, heading)
         if key == self._font_fit_key:
             return
 
@@ -272,7 +291,7 @@ class CountdownWidget:
             self._measure_font.configure(size=-size)
             return self._measure_font.metrics("linespace")
 
-        size, small = fit_font_sizes(width, height, countdown, date_text, measure, linespace)
+        size, small = fit_font_sizes(width, height, countdown, date_text, measure, linespace, heading)
         self.label_countdown.configure(font=(FONT_FAMILY, -size, "bold"))
         self.label_top.configure(font=(FONT_FAMILY, -small, "bold"))
         self.label_date.configure(font=(FONT_FAMILY, -small))
@@ -343,7 +362,7 @@ class CountdownWidget:
             if not self._interacting and areas != self._work_areas:
                 if self._recover_window():
                     self._save_window_state()
-            if self.is_visible():
+            if self.is_visible() and self.win.grab_current() is None:
                 self.win.attributes("-topmost", True)
                 self.win.lift()
         except tk.TclError:
@@ -368,29 +387,23 @@ class CountdownWidget:
 
     def _update_display(self):
         """Format remaining time and update labels."""
-        now = datetime.now()
-        remaining = self.death_datetime - now
-
-        if remaining.total_seconds() <= 0:
-            self.label_countdown.configure(text="TIME'S UP")
-            self.label_date.configure(text="")
-            self._scale_current_fonts()
-            return
-
-        # Break total seconds down into years / days / hours / minutes / seconds
-        total_secs = int(remaining.total_seconds())
-        years, rem = divmod(total_secs, 365 * 24 * 3600)
-        days,  rem = divmod(rem,        24 * 3600)
-        hours, rem = divmod(rem,        3600)
-        mins,  secs = divmod(rem,       60)
-
-        # Format: "38y 147d 14:22:09"
-        countdown_text = f"{years}y {days:03d}d {hours:02d}:{mins:02d}:{secs:02d}"
-        self.label_countdown.configure(text=countdown_text)
-
-        death_str = self.death_datetime.strftime("%B %d, %Y")
-        self.label_date.configure(text=f"Est. {death_str}")
+        display = format_countdown(self.death_datetime, datetime.now(),
+                                   self.config.get("display_mode", "years"),
+                                   self.config.get("show_seconds", True))
+        self.label_top.configure(text=display.heading)
+        self.label_countdown.configure(text=display.countdown)
+        self.label_date.configure(text=display.target)
         self._scale_current_fonts()
+
+    def apply_display_preferences(self):
+        """Apply saved appearance without showing, lifting, or changing the target."""
+        self._interacting = False
+        self.win.attributes("-alpha", self.config.get("opacity", 0.93))
+        if self.config.get("lock_position", False):
+            self.grip.place_forget()
+        else:
+            self.grip.place(relx=1.0, rely=1.0, anchor="se")
+        self._update_display()
 
     # ── Show / Hide ───────────────────────────────────────────────────────────
 

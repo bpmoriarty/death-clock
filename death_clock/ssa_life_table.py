@@ -1,6 +1,6 @@
 """
-SSA Period Life Table data (2021).
-Source: https://www.ssa.gov/oact/STATS/table4c6.html
+Legacy embedded table, originally labeled SSA 2021; source fidelity unverified.
+Original reference: https://www.ssa.gov/oact/STATS/table4c6.html
 
 Each dictionary maps age (int) to remaining life expectancy e(x) in years.
 """

@@ -1,118 +1,83 @@
 # Death Clock — project status
 
-## Purpose and current use
+## Purpose
 
-A personal reminder to use time well, not a longevity prediction or a product for
-wider distribution. Used successfully on several computers, currently with one
-monitor per setup. Multiple-monitor support is future-proofing.
+A personal reminder to use time well, not a longevity prediction or a product
+for wider distribution. Used on multiple computers, currently one monitor each.
 
-## Active work
+## Current behavior
 
-The complete checklist is in [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md). Keep it
-updated as work progresses. Delete it only after all accepted work is complete
-and its final outcome is recorded here.
+All five original priorities are implemented and tested:
 
-1. **Protect the saved countdown:** implemented; automated checks passed.
-2. **Window placement and monitor recovery:** implemented; automated checks passed.
-3. **Single instance and reliable launching:** implemented; automated checks passed.
-4. **Shared target vs device preferences:** next.
-5. **Modest display controls:** planned.
+1. **Countdown protection:** validation, atomic writes, rolling backups, recovery
+   copies, and saving before changing the live target.
+2. **Placement:** monitor work areas, off-screen recovery, Reset position, resize
+   limits, and measured font fitting.
+3. **Launching:** checked VBS launcher, optional desktop shortcut, per-user single
+   instance, reveal requests, and bounded local diagnostic logs.
+4. **Portable target:** shared profile in settings.json; device preferences in
+   LOCALAPPDATA/DeathClock/preferences.json. Local-only saves never rewrite the
+   target. Export/restore previews and backs up the target. Windows supplies the
+   login setting. Detected stale shared-file writes are rejected.
+5. **Display:** lock position/size, opacity, optional seconds, calendar years/days,
+   total days or weeks/days. Defaults stay familiar. After the target passes,
+   show “Make today count” and retain the date. Modal dialogs stay in front.
 
-Work is paused at the user's request. Resume with priority 4 when requested.
+## Latest increment — target selection and cleanup
 
-Additional settings, target-selection, source-data, privacy, and code-cleanup
-items are tracked in the plan. No automatic recalculation or medical-model
-expansion is planned.
+- Existing countdowns open with Keep saved target, preserving the exact ISO value
+  even with a missing/damaged birth date.
+- First setup defaults to choosing a date. Date targets need no health profile.
+  Age targets use midnight on the chosen birthday, with February 29 clamped to
+  February 28 in non-leap years. Every new choice is previewed before saving;
+  past targets are identified explicitly.
+- Legacy calculation is optional and explicitly described as unvalidated. A
+  fresh calculation requires confirmation; current/former smoker cannot both be
+  selected. Existing targets remain usable without correcting their old inputs.
+- Settings has a resizable, scrollable input area and persistent Save/Cancel
+  controls. Cancel writes nothing. Restore remains available on first setup.
+- Centralize factor labels/defaults/groups/multipliers; inject calculation time.
+  Replace time-dependent tests and personal examples with fictional fixed cases.
+  Remove inaccurate reproducibility claims and the empty claude.md placeholder;
+  put lasting working rules in AGENTS.md.
 
-## Latest increment — single instance and reliable launching
+## Verification and acceptance
 
-- Acquire a Windows user-scoped mutex before importing the UI or reading settings.
-  Repeat launches signal the owner and exit; requests queue during startup. A
-  crashed owner does not leave a stale lock. Separate project copies share the lock.
-- Reveal hidden clocks and reuse/raise the existing Settings window, including
-  first-run Settings. Poll reveal requests on the Tk thread.
-- Replace package-path injection with an explicit project-interpreter probe and
-  pythonw launch. No automatic dependency installation or environment rebuilding.
-- Provide Start Death Clock.vbs and Create Desktop Shortcut.vbs; route future login
-  registration through the same checked Windows bootstrap. Paths with spaces work.
-- Report launch, UI callback, and tray-thread failures. Keep bounded logs under
-  LOCALAPPDATA/DeathClock/logs without profile values or exception messages.
-- Close the tray and root window before releasing the instance lock.
+**238 tests passed** with the project's Python 3.12.10. This includes target date
+and age boundaries, preview acceptance/decline, damaged-profile preservation,
+first-run setup/export, and deterministic legacy calculation checks. The count
+decreased from an intermediate 240 when redundant legacy tests were replaced.
+All settings tests use temporary paths and fictional profiles.
 
-Adoption: exit the currently running pre-lock version once, then use the new
-launcher. If login startup is enabled, Save in the updated Settings once to
-refresh its registry entry (preference-only saves retain the target). No actual
-shortcut or registry entry was changed during implementation.
+Invisible Settings forms built every selection mode at normal and 150% widget
+scaling. Earlier verification included 48 native display-font layouts, monitor
+geometry checks, native single-instance processes, and isolated VBS/shortcut checks.
+The user confirmed successful reopening after storage changes and working display
+options. Manual acceptance remains for new target-selection interactions, actual
+cross-computer restore, login startup, and physical monitor/DPI changes.
 
-## Completed — window placement and monitor recovery
+Implementation/tests did not change the live profile, local preferences, running
+clock, registry, or dependencies. Activate UI changes on a normal exit/relaunch.
 
-- Query each Windows monitor's usable work area, including negative coordinates
-  and taskbar reservations. Preserve reachable positions, including slightly
-  off-screen placements, rather than forcing everything onto the primary screen.
-- Recover missing-monitor/off-screen positions and constrain oversized windows to
-  the available work area. Desktop gaps do not count as reachable space.
-- Check for layout changes every five seconds; defer recovery during drag/resize.
-  Recovery does not reveal a hidden clock. A temporary monitor-query failure
-  retains the last known layout instead of moving the clock unnecessarily.
-- Add **Reset position** to the tray menu: center on the primary monitor, reveal
-  the widget, and save its placement without changing the target.
-- Constrain resize grip movement to the current work area; normal minimum size is
-  280 by 90, reduced only when the available work area itself is smaller.
-- Fit all three text rows using real font measurements and pixel-sized fonts,
-  refreshing after resizing and display updates. Account for the resize grip.
-- Move monitor discovery and geometry rules into death_clock/placement.py.
+## Remaining work
 
-## Previous increment — countdown protection
+Work is paused at the user's request. Resume with the open plan items when asked.
+After the plan is finished, give README.md a final update for GitHub covering the
+finished behavior, setup, and usage. Existing incremental README edits are not
+that final pass. Record completion here before deleting IMPROVEMENT_PLAN.md.
 
-- Validate nested settings and repair invalid preferences without discarding a
-  usable target. A target can run even if the birth-date field is damaged.
-- Create settings.json.bak on the first target save; later saves back up the
-  previous usable countdown. This is a rolling backup, not permanent history.
-- Recover from the backup if the primary target is missing or unusable. Warn the
-  user; never recalculate during recovery or rewrite the primary during loading.
-- Preserve damaged originals in unique .corrupt copies. Stop saves if an
-  unreadable original or failed backup cannot safely be preserved.
-- Use unique temporary files for atomic writes and remove them after failures.
-- Save proposed settings before changing the live state. Show write errors and
-  allow retry; failed saves do not change the running target.
-- Preserve the exact stored target string on preference-only saves. Ask before
-  replacing an existing target and disable Save after success.
-- Show startup-registration failures separately from successful countdown saves.
-- Report window-save failures and still allow exit. Closing first-run Settings
-  without saving does not write empty defaults.
-- Ignore backup, recovery, and temporary files in Git.
+Keep IMPROVEMENT_PLAN.md until the open work is completed or explicitly retired.
+The embedded legacy table still needs verification against a fixed official
+source; model/source provenance is unverified and labeled accordingly. No table
+values or multipliers were changed. This work does not claim medical accuracy.
 
-## Verification
+OneDrive is not conflict-free storage. Change the shared profile on one computer
+at a time; shared-change checks cannot prevent every simultaneous remote write.
+The running clock retains its loaded target until reopened or explicitly restored.
+Old legacy device fields stay inert until an explicit profile save/restore removes
+them after backup. Local preferences may save before a later shared save fails,
+but the running target stays unchanged on that failure.
 
-**160 tests passed** using the project's own Python 3.12.10. This includes the
-previous 136 checks plus 24 launch checks covering native duplicate processes,
-simultaneous startup, abandoned locks, exact interpreter selection, error logs,
-startup quoting, cleanup, Windows-script compilation, and real shortcut creation
-in a temporary fake desktop. All settings tests use isolated fictional profiles.
-
-An independent process successfully revealed an invisible real-Tk test clock
-using a unique test-only lock name and an in-memory profile. Earlier placement
-work also passed 12 invisible real-Tk checks across four sizes and three Tk
-scaling values, plus actual Windows work-area enumeration.
-
-The project interpreter and UI imports work outside the sandbox. The earlier
-failure came from review-session access restrictions, not a broken environment.
-No repair or dependency synchronization was needed or performed.
-
-The user confirmed that the VBS launcher opens the clock successfully.
-Remaining manual acceptance: clicking the real desktop shortcut/tray, Windows
-login, physical monitor unplug/replug, and mixed Windows
-DPI. The real clock was not restarted or signaled by the tests. No tool wrote the
-live settings. Its file hash changed while the live application was in use; the
-current file and rolling backup differ only in window placement and have the
-same saved target. We did not restore or overwrite that live change.
-
-## Lasting rules
-
-- The stored target is authoritative. Never recalculate on launch, recovery,
-  migration, or preference-only save.
-- Do not edit the live profile or restart the running app just to run tests.
-- Test with fictional profiles and temporary files; never use actual health data.
-- Never synchronize dependencies while the widget is running.
-- Runtime data is excluded from Git, but files inside OneDrive may still sync.
-- Keep this status concise. Previous implementation history remains in Git.
+Runtime settings and default export names are ignored by Git; renamed exports may
+not be. OneDrive may still sync those private files. Historical Git content was
+not rewritten.

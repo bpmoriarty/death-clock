@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from death_clock import config, settings_window, startup
+from death_clock import config, settings_window, startup, storage, targets
 from death_clock.app import App
 
 
@@ -15,6 +15,7 @@ from death_clock.app import App
 def settings_path(tmp_path, monkeypatch):
     path = tmp_path / "settings.json"
     monkeypatch.setattr(config, "CONFIG_PATH", str(path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "device"))
     return path
 
 
@@ -126,11 +127,16 @@ def test_cannot_clear_existing_target(settings_path, profile):
 
 
 @pytest.fixture
-def form(profile, monkeypatch):
+def form(profile, settings_path, monkeypatch):
     # Exercise the real save handler without creating windows or registry entries.
     window = settings_window.SettingsWindow.__new__(settings_window.SettingsWindow)
-    window.config = profile
+    config.save_config(profile)
+    window.config = storage.load_settings()
     window._saved = False
+    window._startup_available = True
+    window.target_mode = Mock(get=Mock(return_value="Keep saved target"))
+    window.target_entry = Mock(get=Mock(return_value=""))
+    window.age_entry = Mock(get=Mock(return_value=""))
     window.win = Mock()
     window.dob_entry = Mock()
     window.dob_entry.get.return_value = profile["date_of_birth"]
@@ -154,7 +160,7 @@ def form(profile, monkeypatch):
 
 def test_preference_save_preserves_exact_string_and_notifies_once(settings_path, form, monkeypatch):
     calculate = Mock(side_effect=AssertionError("must not recalculate"))
-    monkeypatch.setattr(settings_window, "compute_death_datetime", calculate)
+    monkeypatch.setattr(targets, "compute_death_datetime", calculate)
     target = form.config["death_datetime_iso"]
     form._save()
     form._save()
@@ -166,7 +172,7 @@ def test_preference_save_preserves_exact_string_and_notifies_once(settings_path,
 
 def test_save_error_allows_retry_without_changing_running_state(settings_path, form, monkeypatch):
     original = deepcopy(form.config)
-    monkeypatch.setattr(config, "save_config", Mock(side_effect=OSError("disk full")))
+    monkeypatch.setattr(storage, "save_preferences", Mock(side_effect=OSError("disk full")))
     form._save()
     assert form.config == original
     assert not form._saved
@@ -178,11 +184,13 @@ def test_save_error_allows_retry_without_changing_running_state(settings_path, f
 
 def test_declining_target_change_does_not_write(settings_path, form, monkeypatch):
     original = deepcopy(form.config)
+    original_file = settings_path.read_bytes()
+    form.target_mode.get.return_value = "Legacy calculation"
     form.factor_vars["regular_exercise"].get.return_value = True
     settings_window.messagebox.askyesno.return_value = False
     form._save()
     assert form.config == original
-    assert not settings_path.exists()
+    assert settings_path.read_bytes() == original_file
     form.on_save.assert_not_called()
 
 
@@ -222,8 +230,9 @@ def test_closing_first_run_does_not_write_defaults(monkeypatch):
 def test_settings_form_builds_before_first_save(profile, monkeypatch):
     """Build the form with stand-in controls; no real desktop window is opened."""
     for name in ("CTkLabel", "CTkEntry", "CTkFrame", "CTkRadioButton",
-                 "CTkCheckBox", "CTkButton", "StringVar", "BooleanVar"):
-        monkeypatch.setattr(settings_window.ctk, name, Mock())
+                 "CTkCheckBox", "CTkButton", "StringVar", "BooleanVar", "CTkScrollableFrame", "CTkOptionMenu"):
+        monkeypatch.setattr(settings_window.ctk, name, Mock(side_effect=lambda *a, **kw: Mock()))
+    monkeypatch.setattr(settings_window, "is_registered", Mock(return_value=False))
     form = settings_window.SettingsWindow.__new__(settings_window.SettingsWindow)
     form.config = profile
     form.win = Mock()

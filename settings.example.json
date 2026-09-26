@@ -16,14 +16,5 @@
     "mediterranean_diet": false,
     "college_degree": false,
     "married": false
-  },
-
-  "window": {
-    "x": 100,
-    "y": 100,
-    "width": 440,
-    "height": 120
-  },
-
-  "start_on_boot": false
+  }
 }

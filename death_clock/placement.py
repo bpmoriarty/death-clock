@@ -143,7 +143,7 @@ def resize_placement(window: Placement, width: int, height: int,
                      min(max(MIN_HEIGHT, height), max_height))
 
 
-def fit_font_sizes(width, height, countdown, date_text, measure, linespace):
+def fit_font_sizes(width, height, countdown, date_text, measure, linespace, heading="TIME REMAINING"):
     """Find the largest pixel font fitting all three rows, including grip space."""
     available_width = max(1, width - 26)
     available_height = max(1, height - 18)
@@ -153,7 +153,7 @@ def fit_font_sizes(width, height, countdown, date_text, measure, linespace):
         size = (low + high) // 2
         small = min(size, max(11, size // 3))
         fits = (measure(countdown, size) <= available_width
-                and measure("TIME REMAINING", small) <= available_width
+                and measure(heading, small) <= available_width
                 and measure(date_text, small) <= max(1, available_width - 18)
                 and linespace(size) + 2 * linespace(small) <= available_height)
         if fits:

@@ -1,8 +1,8 @@
 # Death Clock
 
-An always-on-top desktop widget that counts down to an estimated death date,
-calculated from [SSA actuarial life tables (2021)](https://www.ssa.gov/oact/STATS/table4c6.html)
-adjusted for health and lifestyle factors.
+An always-on-top personal reminder to use time well. Keep your existing countdown
+or choose a target date or age. An optional, unvalidated legacy calculation is
+available with a preview before saving.
 
 Windows only — it uses the Windows registry for launch-at-login and a system
 tray icon.
@@ -27,8 +27,8 @@ Then launch it:
 uv run python -m death_clock.main
 ```
 
-On first launch the Settings window opens, since there's no profile yet. Fill in
-your date of birth, sex, and health factors, then press **Save settings**.
+On first launch Settings opens. Choose a reminder date or age and confirm the preview. You can also restore an existing countdown. The optional legacy calculation accepts
+a birth date, sex, and health factors.
 
 ## Daily use
 
@@ -56,6 +56,7 @@ to refresh the login entry to the checked launcher; the target stays unchanged.
 | Settings / Hide / Exit | Right-click the widget |
 | Bring it back after hiding | Click the tray icon |
 | Recover a misplaced clock | Tray menu → Reset position |
+| Lock position, change opacity or countdown format | Clock or tray menu → Display… |
 | Launch at Windows login | Tick the box in Settings |
 
 The clock remembers positions on any connected monitor, including monitors to
@@ -95,20 +96,76 @@ excluded from Git by `.gitignore`. Files in a OneDrive folder may still sync
 between computers; Git exclusion does not prevent that. `settings.example.json` shows
 the file's shape without any personal data.
 
-To move your exact countdown to another computer, copy `settings.json` across by
-hand. Cloning the repo alone won't do it — see below.
+Window placement and opacity live in
+`%LOCALAPPDATA%\DeathClock\preferences.json`, with a rolling `.bak` beside it.
+These preferences belong to this Windows user on this computer and are shared
+by project copies on that computer. They do not travel with the project folder.
+Display options live in the same local file; the default opacity remains 0.93.
+Moving, resizing, and exiting write only this local file. Login startup is read
+from Windows when Settings opens; an unreadable entry disables that checkbox
+and shows an explanation. Imported files never enable login startup.
 
-Copy the file in **before** the first launch. If it isn't there, the app assumes
-you're a new user and opens first-run Settings. Once it is in place you can open
-Settings freely — changing only a preference like "launch at login" leaves the
-stored death date exactly as it was.
+On the first updated launch, existing placement is copied into local preferences
+with a backup. The original shared file stays intact as a recovery source.
+Legacy window/startup fields in it become inactive and are removed on the next
+explicit profile change or restore, after backing up the previous file. Later
+launches use local preferences even if another computer changes those old fields.
+Local preference damage uses the local backup; unreadable originals are protected
+from overwriting. No migration recalculates a target or changes login registration.
+
+## Display options
+
+Choose **Display…** from the clock's right-click menu or its tray menu. Lock the
+position and size, adjust opacity from 20% to 100%, hide seconds, or choose years
+and days, total days, or total weeks with remaining days. **Save display** applies
+the changes only after saving them on this computer. **Cancel** leaves the clock
+unchanged. A hidden clock stays hidden. Unlock through Display to move/resize
+again; Reset position and automatic monitor recovery still work while locked.
+
+Years are whole calendar years from the current time to the target, followed by
+remaining days and clock time. February 29 anniversaries use February 28 in
+non-leap years. This corrects the previous fixed 365-day year display, so the
+digits may differ without changing the saved target. Total days use 24-hour local
+wall-clock days; weeks are groups of seven days. Partial seconds round upward.
+Hiding seconds removes that field while the clock continues refreshing normally.
+
+At or after the target, the message becomes **Make today count**, and the target
+date stays visible. The app never starts a new target automatically. Brighter
+gray labels retain the existing gray-and-green appearance, and periodic topmost
+refresh leaves Settings and Display dialogs in front.
+
+## Moving a countdown between computers
+
+In Settings, choose **Export countdown…**, copy the resulting file to the other
+computer, and choose **Restore countdown…** there. Restore works in first-run
+Settings too. It previews the target and asks before replacing the profile,
+backs up the previous countdown, and retains that computer's preferences.
+It never recalculates. Cancel leaves everything unchanged. Export uses the saved
+profile; Restore discards unsaved form edits after confirmation.
+
+Exports contain the target, birth date, sex, and health selections. Keep them
+private. The default `*.deathclock-export.json` names are ignored by Git; a
+renamed export is not necessarily ignored. Exports in OneDrive may still sync.
+You can also copy `settings.json` before the first launch or select an existing
+settings file in Restore. Cloning the repository alone does not copy your target.
+
+OneDrive is not a conflict-free database. Let it finish syncing and change the
+shared profile on only one computer at a time. If the shared file changes while
+the clock is running, local preference saves leave it alone; profile changes and
+restores refuse to overwrite a detected change and ask you to reopen the clock.
+The running clock keeps its loaded target until reopened or explicitly restored.
+This check cannot eliminate simultaneous cross-computer writes or OneDrive
+conflict copies. Review competing files through Restore rather than guessing
+which target to overwrite. Use the updated version on each computer; old versions
+still write device preferences into shared settings.
 
 ---
 
 ## Countdown protection
 
 After a target is saved with the updated app, `settings.json.bak` holds a recovery
-copy. Later saves keep the previous usable countdown in that rolling backup.
+copy. Later profile changes/restores keep the previous usable countdown in that
+rolling backup. Preference-only saves do not touch the shared file or its backup.
 If the main settings are damaged or missing, the app can load the backup and
 explain what happened without recalculating your target. Damaged originals are
 kept as `settings.json.corrupt` (with unique suffixes for additional copies).
@@ -118,42 +175,33 @@ A failed settings save leaves the running target unchanged and displays an error
 so you can retry. Saving preferences preserves the target exactly. Changing the
 profile asks you to confirm before replacing an existing target. A Windows-login
 registration failure is reported separately if the countdown itself was saved.
+Local preferences are saved before a changed shared target. If that second save
+fails, local placement may have saved, but the running target stays unchanged.
 
-## How the countdown works
+## Choosing a reminder target
 
-The important design rule: **the death date is calculated once and stored.**
+Settings opens with **Keep saved target** when a countdown exists. This keeps
+the exact stored value, even if the birth date is missing or damaged. Use this
+option for login-setting changes. Profile fields are hidden until needed.
 
-1. You press Save in Settings.
-2. `life_expectancy.compute_death_datetime()` runs — the only place it ever runs
-   — and only if your date of birth, sex or factors actually changed.
-3. The result is written to `settings.json` as `death_datetime_iso`.
-4. Every launch after that just reads that stored value and subtracts `now`.
+- **Choose a date:** enter YYYY-MM-DD. No birth date or health profile is needed.
+  The target is midnight at the start of that date, in local time.
+- **Choose an age:** enter a whole age from 1 to 150 and your birth date. The
+  target is midnight on that birthday; February 29 uses February 28 in non-leap years.
+- **Legacy calculation:** explicitly request a fresh result from the old formula.
+  It is approximate and unvalidated; neither the embedded table nor its factor
+  adjustments have been verified. Current/former smoker cannot both be selected
+  for a new calculation.
 
-This is why closing and reopening the app doesn't reset your countdown. Nothing
-recalculates on startup.
+Every new selection, including first setup, previews the exact target before
+saving. Declining or Cancel changes nothing. Past dates are allowed after a
+clear preview and show “Make today count.” The input area scrolls and the window
+can be resized; Save, Cancel, and the existing target stay outside that area.
 
-Step 2's condition matters on a second computer. The calculation reads today's
-clock, so running it again months later gives a slightly different answer — you
-are genuinely older. Without the check, opening Settings just to tick a checkbox
-would quietly replace a death date you had deliberately carried across. Save now
-keeps the stored date whenever the actuarial inputs are untouched, and says
-"Death date unchanged" so you can see which happened.
-
-### Reproducibility
-
-The calculation interpolates the SSA table at your exact fractional age, so the
-same inputs give the same answer regardless of which day you press Save. An
-earlier version looked the table up at your whole-number age while measuring age
-continuously, which made the result drift ~1 day later per day and then jump
-~11 months backwards on each birthday.
-
-A slow drift remains by design: having survived another year genuinely raises
-your expected total lifespan, and the effect compounds with age. Recalculating
-five years later moves the date by anywhere from a few days to a few months,
-depending on your factor mix. That's real actuarial signal, not a bug — what's
-gone is the discontinuity.
-
----
+Only the saved date drives the clock. Startup, recovery, migration, display
+changes, and keeping the saved target never calculate a replacement. The legacy
+formula depends on the calculation date: interpolation smooths changes, but
+does not make repeated calculations on different dates identical.
 
 ## Project layout
 
@@ -165,20 +213,25 @@ gone is the discontinuity.
 | `death_clock/launcher.py` | Verifies and starts the project's own interpreter |
 | `death_clock/instance.py` | Single-instance lock and reveal requests |
 | `death_clock/diagnostics.py` | Bounded local error reporting without profile data |
+| `death_clock/storage.py` | Local preferences, shared-file conflict checks, export/restore |
+| `death_clock/countdown.py` | Calendar-aware countdown formatting |
+| `death_clock/display_window.py` | Local display controls |
 | `death_clock/main.py` | Entry point |
 | `death_clock/app.py` | Orchestrator — wires the widget, tray, and settings together |
 | `death_clock/widget.py` | The floating countdown overlay |
 | `death_clock/settings_window.py` | CustomTkinter settings form |
 | `death_clock/config.py` | Reads/writes `settings.json` |
-| `death_clock/life_expectancy.py` | Actuarial calculation and hazard ratios |
-| `death_clock/ssa_life_table.py` | SSA 2021 life table data |
+| `death_clock/targets.py` | Explicit target date/age selection and validation |
+| `death_clock/factors.py` | Shared definitions for legacy formula inputs |
+| `death_clock/life_expectancy.py` | Optional legacy reminder formula |
+| `death_clock/ssa_life_table.py` | Unverified legacy table, originally labeled SSA 2021 |
 | `death_clock/startup.py` | Windows registry launch-at-login |
 
 ---
 
 ## A caveat on the numbers
 
-The hazard ratios in `life_expectancy.py` are rough figures from published
-epidemiology, multiplied together as if each factor were independent. They
-aren't — smoking and heart disease overlap, exercise and sedentary work pull in
-opposite directions. Treat the output as a memento mori, not a medical estimate.
+The legacy multipliers have no verified source mapping in this project and are
+combined as if independent. The table's source fidelity also remains unverified.
+The option is retained for compatibility, with explicit preview and confirmation.
+A chosen date or age better matches the app's purpose as a personal reminder.

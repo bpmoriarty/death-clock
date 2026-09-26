@@ -17,9 +17,11 @@ from tkinter import messagebox
 
 from PIL import Image, ImageDraw
 
-from .config import load_config, save_config, get_death_datetime
+from .config import get_death_datetime
+from .storage import load_settings as load_config, save_preferences as save_config
 from .widget import CountdownWidget
 from .settings_window import SettingsWindow
+from .display_window import DisplayWindow
 from .diagnostics import report_error
 
 # pystray creates the system tray icon
@@ -114,6 +116,7 @@ class App:
             config=self.config,
             on_settings=self._open_settings,
             on_exit=self._exit,
+            on_display_settings=self._open_display_settings,
         )
         # When the widget moves/resizes, save the new position to disk
         self.widget.on_window_change = self._save_preferences
@@ -127,6 +130,7 @@ class App:
             Item("Show",     self._tray_show, default=True),  # Default = double-click action
             Item("Reset position", self._tray_reset_position),
             Item("Settings", self._tray_settings),
+            Item("Display…", self._tray_display_settings),
             Menu.SEPARATOR,
             Item("Exit",     self._tray_exit),
         )
@@ -195,6 +199,15 @@ class App:
             settings.win.focus_force()
             return True
         return False
+
+    def _open_display_settings(self):
+        if self._raise_settings():
+            return
+        self._settings_window = DisplayWindow(self.root, self.config,
+                                              self.widget.apply_display_preferences)
+
+    def _tray_display_settings(self, icon=None, item=None):
+        self.root.after(0, self._open_display_settings)
 
     def _poll_show_requests(self):
         if self.instance.take_show_request():

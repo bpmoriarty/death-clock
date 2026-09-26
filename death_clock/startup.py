@@ -54,7 +54,7 @@ def is_registered() -> bool:
     """Return True if Death Clock is currently registered for startup."""
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _REG_PATH, 0, winreg.KEY_READ) as key:
-            winreg.QueryValueEx(key, APP_NAME)
-        return True
+            command, kind = winreg.QueryValueEx(key, APP_NAME)
+        return kind in (winreg.REG_SZ, winreg.REG_EXPAND_SZ) and bool(command.strip())
     except FileNotFoundError:
         return False

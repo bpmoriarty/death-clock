@@ -44,10 +44,10 @@ def test_defaults_are_not_shared_between_calls(config_path):
 
 def test_missing_keys_are_filled_in_from_defaults(config_path):
     """An old settings file shouldn't break after new keys are introduced."""
-    config_path.write_text(json.dumps({"date_of_birth": "1986-05-30"}), encoding="utf-8")
+    config_path.write_text(json.dumps({"date_of_birth": "1991-02-03"}), encoding="utf-8")
 
     loaded = config.load_config()
-    assert loaded["date_of_birth"] == "1986-05-30"   # kept
+    assert loaded["date_of_birth"] == "1991-02-03"   # kept
     assert loaded["sex"] == "male"                    # filled in
     assert "diabetes" in loaded["factors"]            # nested keys filled in
     assert loaded["window"]["width"] == 440
@@ -70,7 +70,7 @@ def test_corrupt_file_does_not_raise(config_path):
     The app runs under pythonw.exe with no console, so an exception here would
     kill it at startup with nothing shown on screen.
     """
-    config_path.write_text('{"date_of_birth": "1986-05-30",,, BROKEN', encoding="utf-8")
+    config_path.write_text('{"date_of_birth": "1991-02-03",,, BROKEN', encoding="utf-8")
 
     loaded = config.load_config()
     assert loaded["date_of_birth"] == ""  # fell back to defaults
@@ -96,15 +96,15 @@ def test_a_json_list_is_treated_as_corrupt(config_path):
 
 def test_save_then_load_round_trips(config_path):
     original = config.load_config()
-    original["date_of_birth"] = "1986-05-30"
-    original["death_datetime_iso"] = "2066-08-26T12:01:17.204457"
+    original["date_of_birth"] = "1991-02-03"
+    original["death_datetime_iso"] = "2075-08-26T12:01:17.204457"
     original["factors"]["sedentary"] = True
 
     config.save_config(original)
     reloaded = config.load_config()
 
-    assert reloaded["date_of_birth"] == "1986-05-30"
-    assert reloaded["death_datetime_iso"] == "2066-08-26T12:01:17.204457"
+    assert reloaded["date_of_birth"] == "1991-02-03"
+    assert reloaded["death_datetime_iso"] == "2075-08-26T12:01:17.204457"
     assert reloaded["factors"]["sedentary"] is True
 
 
@@ -121,7 +121,7 @@ def test_save_never_leaves_a_half_written_file(config_path, monkeypatch):
     be intact and readable.
     """
     good = config.load_config()
-    good["date_of_birth"] = "1986-05-30"
+    good["date_of_birth"] = "1991-02-03"
     config.save_config(good)
 
     def explode(*args, **kwargs):
@@ -132,13 +132,13 @@ def test_save_never_leaves_a_half_written_file(config_path, monkeypatch):
         config.save_config({**good, "date_of_birth": "1999-01-01"})
 
     # The original file survived the failed write untouched
-    assert config.load_config()["date_of_birth"] == "1986-05-30"
+    assert config.load_config()["date_of_birth"] == "1991-02-03"
 
 
 def test_non_ascii_survives_a_round_trip(config_path):
     """Explicit UTF-8 encoding, rather than the Windows locale default."""
     cfg = config.load_config()
-    cfg["date_of_birth"] = "1986-05-30"
+    cfg["date_of_birth"] = "1991-02-03"
     cfg["note"] = "café — naïve — 死"
     config.save_config(cfg)
     assert config.load_config()["note"] == "café — naïve — 死"
@@ -147,11 +147,11 @@ def test_non_ascii_survives_a_round_trip(config_path):
 # ── Reading the death date ────────────────────────────────────────────────────
 
 def test_death_datetime_is_parsed_back(config_path):
-    cfg = {"death_datetime_iso": "2066-08-26T12:01:17.204457"}
-    assert config.get_death_datetime(cfg) == datetime(2066, 8, 26, 12, 1, 17, 204457)
+    cfg = {"death_datetime_iso": "2075-08-26T12:01:17.204457"}
+    assert config.get_death_datetime(cfg) == datetime(2075, 8, 26, 12, 1, 17, 204457)
 
 
-@pytest.mark.parametrize("stored", ["", "not a date", "2066-13-45T99:99:99"])
+@pytest.mark.parametrize("stored", ["", "not a date", "2075-13-45T99:99:99"])
 def test_unusable_death_dates_return_none(stored):
     """None sends the app to the Settings window rather than crashing it."""
     assert config.get_death_datetime({"death_datetime_iso": stored}) is None
@@ -163,7 +163,7 @@ def test_missing_death_date_key_returns_none():
 
 @pytest.mark.parametrize(
     "dob, expected",
-    [("1986-05-30", True), ("", False), ("   ", False)],
+    [("1991-02-03", True), ("", False), ("   ", False)],
 )
 def test_has_profile_checks_for_a_real_date_of_birth(dob, expected):
     assert config.has_profile({"date_of_birth": dob}) is expected
@@ -176,9 +176,9 @@ def test_has_profile_checks_for_a_real_date_of_birth(dob, expected):
 # stored date was calculated from exactly these inputs and should be kept.
 
 SAVED = {
-    "date_of_birth": "1986-05-30",
+    "date_of_birth": "1991-02-03",
     "sex": "male",
-    "death_datetime_iso": "2066-08-26T12:01:17.204457",
+    "death_datetime_iso": "2075-08-26T12:01:17.204457",
     "factors": {"sedentary": True, "regular_exercise": True, "obesity": False},
 }
 
@@ -188,33 +188,33 @@ SAME_FACTORS = {"sedentary": True, "regular_exercise": True, "obesity": False}
 def test_untouched_inputs_keep_the_stored_date():
     """The copy-to-a-new-computer case: nothing changed, so nothing recalculates."""
     assert config.stored_date_matches_inputs(
-        SAVED, "1986-05-30", "male", SAME_FACTORS
+        SAVED, "1991-02-03", "male", SAME_FACTORS
     ) is True
 
 
 def test_a_new_date_of_birth_forces_a_recalculation():
     assert config.stored_date_matches_inputs(
-        SAVED, "1986-05-31", "male", SAME_FACTORS
+        SAVED, "1991-02-04", "male", SAME_FACTORS
     ) is False
 
 
 def test_a_new_sex_forces_a_recalculation():
     assert config.stored_date_matches_inputs(
-        SAVED, "1986-05-30", "female", SAME_FACTORS
+        SAVED, "1991-02-03", "female", SAME_FACTORS
     ) is False
 
 
 def test_toggling_any_factor_forces_a_recalculation():
     changed = {**SAME_FACTORS, "obesity": True}
     assert config.stored_date_matches_inputs(
-        SAVED, "1986-05-30", "male", changed
+        SAVED, "1991-02-03", "male", changed
     ) is False
 
 
 def test_turning_a_factor_off_forces_a_recalculation():
     changed = {**SAME_FACTORS, "sedentary": False}
     assert config.stored_date_matches_inputs(
-        SAVED, "1986-05-30", "male", changed
+        SAVED, "1991-02-03", "male", changed
     ) is False
 
 
@@ -225,12 +225,12 @@ def test_a_factor_absent_from_the_saved_file_counts_as_off():
     """
     older_file = {**SAVED, "factors": {"sedentary": True, "regular_exercise": True}}
     assert config.stored_date_matches_inputs(
-        older_file, "1986-05-30", "male", SAME_FACTORS
+        older_file, "1991-02-03", "male", SAME_FACTORS
     ) is True
 
     # ...but ticking it is a real change.
     assert config.stored_date_matches_inputs(
-        older_file, "1986-05-30", "male", {**SAME_FACTORS, "obesity": True}
+        older_file, "1991-02-03", "male", {**SAME_FACTORS, "obesity": True}
     ) is False
 
 
@@ -238,7 +238,7 @@ def test_factors_we_no_longer_use_do_not_force_a_recalculation():
     """An obsolete key left in the file is irrelevant to today's calculation."""
     with_junk = {**SAVED, "factors": {**SAME_FACTORS, "astrological_sign": True}}
     assert config.stored_date_matches_inputs(
-        with_junk, "1986-05-30", "male", SAME_FACTORS
+        with_junk, "1991-02-03", "male", SAME_FACTORS
     ) is True
 
 
@@ -247,12 +247,12 @@ def test_no_usable_stored_date_means_recalculate(stored):
     """Nothing worth preserving, so the answer is always to calculate afresh."""
     cfg = {**SAVED, "death_datetime_iso": stored}
     assert config.stored_date_matches_inputs(
-        cfg, "1986-05-30", "male", SAME_FACTORS
+        cfg, "1991-02-03", "male", SAME_FACTORS
     ) is False
 
 
 def test_first_run_recalculates():
     """An empty config has no stored date and no profile to compare against."""
     assert config.stored_date_matches_inputs(
-        {}, "1986-05-30", "male", SAME_FACTORS
+        {}, "1991-02-03", "male", SAME_FACTORS
     ) is False
