@@ -14,7 +14,13 @@ Features:
 """
 
 import tkinter as tk
+from tkinter import font as tkfont
 from datetime import datetime
+from collections.abc import Callable
+
+from .placement import (Placement, get_work_areas,
+                        monitor_for, recover_placement, reset_placement,
+                        resize_placement, fit_font_sizes)
 
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -29,12 +35,8 @@ FONT_FAMILY    = "Consolas"  # Monospace so digits don't jump around
 class CountdownWidget:
     """The floating always-on-top countdown clock."""
 
-    # Minimum window dimensions when resizing
-    MIN_WIDTH  = 280
-    MIN_HEIGHT = 90
-
     def __init__(self, root: tk.Tk, death_datetime: datetime, config: dict,
-                 on_settings: callable, on_exit: callable):
+                 on_settings: Callable[[], None], on_exit: Callable[[], None]):
         """
         Args:
             root:           The tkinter root window (hidden — we use this as the anchor)
@@ -59,7 +61,9 @@ class CountdownWidget:
         self._resize_start_h = 0
 
         # Callback for when the window moves/resizes (so app.py can save to disk)
-        self.on_window_change: callable | None = None
+        self.on_window_change: Callable[[], None] | None = None
+        self._interacting = False
+        self._font_fit_key = None
 
         # Create the actual visible window as a Toplevel (child of the hidden root)
         self.win = tk.Toplevel(root)
@@ -86,36 +90,22 @@ class CountdownWidget:
 
         self.win.configure(bg=BORDER_COLOR)
 
-        # Restore last-saved position and size, clamped to screen bounds
+        # Restore against individual work areas, not the desktop bounding box:
+        # space between monitors is not a reachable part of the desktop.
         win_cfg = self.config.get("window", {})
-        w = max(self.MIN_WIDTH,  win_cfg.get("width",  440))
-        h = max(self.MIN_HEIGHT, win_cfg.get("height", 120))
-        x = win_cfg.get("x", 100)
-        y = win_cfg.get("y", 100)
-
-        # Keep the widget reachable, but don't force it fully on-screen.
-        #
-        # Negative coordinates are legitimate: they happen when you park the
-        # widget slightly past the left or top edge, or on a second monitor
-        # positioned to the left of the primary one. The old code clamped to
-        # a minimum of 0, which quietly nudged the widget right every launch.
-        #
-        # Instead we only reposition when almost none of it would be visible
-        # (e.g. after unplugging the monitor it was living on). VISIBLE_MARGIN
-        # is how many pixels must stay on-screen so you can still grab it.
-        VISIBLE_MARGIN = 60
-        screen_w = self.win.winfo_screenwidth()
-        screen_h = self.win.winfo_screenheight()
-        x = max(VISIBLE_MARGIN - w, min(x, screen_w - VISIBLE_MARGIN))
-        y = max(VISIBLE_MARGIN - h, min(y, screen_h - VISIBLE_MARGIN))
-
-        self.win.geometry(f"{w}x{h}+{x}+{y}")
+        self._work_areas = get_work_areas(self.win)
+        placement = recover_placement(Placement(
+            win_cfg.get("x", 100), win_cfg.get("y", 100),
+            win_cfg.get("width", 440), win_cfg.get("height", 120)), self._work_areas)
+        self.win.geometry(placement.geometry())
+        # Remember a recovery in memory; normal save/exit persists it later.
+        self.config["window"] = placement.as_dict()
 
         # Remember the restored size so _build_ui() can scale the fonts to match.
         # We can't ask the window for its own width here -- it hasn't been drawn
         # yet, so winfo_width() would report 1.
-        self._restored_width = w
-        self._restored_height = h
+        self._restored_width = placement.width
+        self._restored_height = placement.height
 
         # Block Alt+F4 (it would kill the whole process since we have no title bar)
         self.win.bind("<Alt-F4>", lambda e: "break")
@@ -124,6 +114,7 @@ class CountdownWidget:
 
     def _build_ui(self):
         """Create all the visual elements inside the window."""
+        self._measure_font = tkfont.Font(root=self.win, family=FONT_FAMILY, weight="bold")
         # Inner frame with the main background color (sits inside the thin border)
         self.frame = tk.Frame(self.win, bg=BG_COLOR, padx=10, pady=6)
         self.frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
@@ -161,6 +152,9 @@ class CountdownWidget:
         )
         self.label_date.pack(fill=tk.X)
 
+        for label in (self.label_top, self.label_countdown, self.label_date):
+            label.configure(padx=0, pady=0, borderwidth=0, highlightthickness=0)
+
         # Resize grip — the ◢ symbol in the bottom-right corner
         # Users drag this to resize the window
         self.grip = tk.Label(
@@ -193,6 +187,7 @@ class CountdownWidget:
 
         # Right-click also works on the main window
         self.win.bind("<Button-3>", self._show_context_menu)
+        self.win.bind("<Configure>", self._on_configure)
 
         # Resize grip events
         self.grip.bind("<Button-1>",        self._resize_start)
@@ -216,6 +211,7 @@ class CountdownWidget:
 
     def _drag_start(self, event):
         """Record where the drag started."""
+        self._interacting = True
         self._drag_start_x = event.x_root - self.win.winfo_x()
         self._drag_start_y = event.y_root - self.win.winfo_y()
 
@@ -227,12 +223,18 @@ class CountdownWidget:
 
     def _drag_end(self, _event):
         """Save the new position when the drag is released."""
+        self._interacting = False
+        self._recover_window()
         self._save_window_state()
 
     # ── Resize ────────────────────────────────────────────────────────────────
 
     def _resize_start(self, event):
         """Record the starting point and window size for a resize operation."""
+        self._recover_window()
+        self._interacting = True
+        self._resize_origin = self._current_placement()
+        self._resize_area = monitor_for(self._resize_origin, self._work_areas)
         self._resize_start_x = event.x_root
         self._resize_start_y = event.y_root
         self._resize_start_w = self.win.winfo_width()
@@ -242,23 +244,76 @@ class CountdownWidget:
         """Resize the window as the grip is dragged."""
         dx = event.x_root - self._resize_start_x
         dy = event.y_root - self._resize_start_y
-        new_w = max(self.MIN_WIDTH,  self._resize_start_w + dx)
-        new_h = max(self.MIN_HEIGHT, self._resize_start_h + dy)
-        self.win.geometry(f"{new_w}x{new_h}")
-        self._scale_fonts(new_w, new_h)
+        placement = resize_placement(self._resize_origin,
+                                     self._resize_start_w + dx,
+                                     self._resize_start_h + dy, self._resize_area)
+        self.win.geometry(placement.geometry())
+        self._scale_fonts(placement.width, placement.height)
 
     def _resize_end(self, _event):
         """Save the new size when resize is done."""
+        self._interacting = False
+        self._recover_window()
         self._save_window_state()
 
     def _scale_fonts(self, width: int, height: int):
-        """Scale the countdown font to fit the window size."""
-        # Derive font size from window dimensions — bigger window = bigger text
-        size = max(12, min(int(width / 16), int(height / 3.5)))
-        small = max(8, size // 3)
-        self.label_countdown.configure(font=(FONT_FAMILY, size, "bold"))
-        self.label_top.configure(font=(FONT_FAMILY, small, "bold"))
-        self.label_date.configure(font=(FONT_FAMILY, small))
+        """Measure real text; negative Tk sizes are pixels, not scaled points."""
+        countdown = self.label_countdown.cget("text")
+        date_text = self.label_date.cget("text")
+        key = (width, height, countdown, date_text)
+        if key == self._font_fit_key:
+            return
+
+        def measure(text, size):
+            self._measure_font.configure(size=-size)
+            return self._measure_font.measure(text)
+
+        def linespace(size):
+            self._measure_font.configure(size=-size)
+            return self._measure_font.metrics("linespace")
+
+        size, small = fit_font_sizes(width, height, countdown, date_text, measure, linespace)
+        self.label_countdown.configure(font=(FONT_FAMILY, -size, "bold"))
+        self.label_top.configure(font=(FONT_FAMILY, -small, "bold"))
+        self.label_date.configure(font=(FONT_FAMILY, -small))
+        self._font_fit_key = key
+
+    def _on_configure(self, event):
+        if event.widget == self.win:
+            self._scale_fonts(event.width, event.height)
+
+    def _scale_current_fonts(self):
+        # Tk reports 1x1 before first mapping; the saved size is known already.
+        width, height = self.win.winfo_width(), self.win.winfo_height()
+        self._scale_fonts(width if width > 1 else self._restored_width,
+                          height if height > 1 else self._restored_height)
+
+    def _current_placement(self):
+        return Placement(self.win.winfo_x(), self.win.winfo_y(),
+                         self.win.winfo_width(), self.win.winfo_height())
+
+    def _apply_placement(self, placement):
+        self.win.geometry(placement.geometry())
+        self.win.update_idletasks()
+        self._scale_fonts(placement.width, placement.height)
+
+    def _recover_window(self):
+        self._work_areas = get_work_areas(self.win, self._work_areas)
+        self.win.update_idletasks()
+        current = self._current_placement()
+        recovered = recover_placement(current, self._work_areas)
+        if recovered != current:
+            self._apply_placement(recovered)
+            return True
+        return False
+
+    def reset_position(self):
+        """Bring a hidden or misplaced clock to the primary screen and save it."""
+        self._work_areas = get_work_areas(self.win, self._work_areas)
+        placement = reset_placement(self._current_placement(), self._work_areas)
+        self._apply_placement(placement)
+        self.show()
+        self._save_window_state()
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
@@ -284,8 +339,13 @@ class CountdownWidget:
         this — nothing can sit on top of them at the OS level.)
         """
         try:
-            self.win.attributes("-topmost", True)
-            self.win.lift()
+            areas = get_work_areas(self.win, self._work_areas)
+            if not self._interacting and areas != self._work_areas:
+                if self._recover_window():
+                    self._save_window_state()
+            if self.is_visible():
+                self.win.attributes("-topmost", True)
+                self.win.lift()
         except tk.TclError:
             return  # Window was destroyed
         self.win.after(5000, self._reassert_topmost)
@@ -314,6 +374,7 @@ class CountdownWidget:
         if remaining.total_seconds() <= 0:
             self.label_countdown.configure(text="TIME'S UP")
             self.label_date.configure(text="")
+            self._scale_current_fonts()
             return
 
         # Break total seconds down into years / days / hours / minutes / seconds
@@ -329,11 +390,14 @@ class CountdownWidget:
 
         death_str = self.death_datetime.strftime("%B %d, %Y")
         self.label_date.configure(text=f"Est. {death_str}")
+        self._scale_current_fonts()
 
     # ── Show / Hide ───────────────────────────────────────────────────────────
 
     def show(self):
         """Make the widget visible."""
+        if self._recover_window():
+            self._save_window_state()
         self.win.deiconify()
         self.win.attributes("-topmost", True)
         self.win.lift()

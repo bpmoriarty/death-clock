@@ -12,6 +12,9 @@ IMPORTANT DESIGN NOTE:
 
 import json
 import os
+import tempfile
+from copy import deepcopy
+from collections.abc import Callable
 from datetime import datetime
 
 # settings.json lives in the same folder as this project (one level up from this file)
@@ -54,63 +57,162 @@ def _fresh_defaults() -> dict:
     }
 
 
-def load_config() -> dict:
-    """
-    Load settings from disk. Returns defaults if the file doesn't exist.
+def _read_object(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as stream:
+        saved = json.load(stream)
+    if not isinstance(saved, dict):
+        raise ValueError("Settings must contain a JSON object")
+    return saved
 
-    If the file exists but can't be read (corrupt JSON, bad permissions), we
-    fall back to defaults rather than raising. That matters because the app
-    runs under pythonw.exe with no console: an uncaught exception here would
-    kill it at startup with nothing shown on screen at all. Falling back means
-    the Settings window opens instead, which is recoverable.
 
-    The damaged file is kept as settings.json.corrupt so nothing is lost --
-    the death date may well still be readable inside it by hand.
+def _normalize(saved: dict) -> tuple[dict, bool]:
+    """Repair individual fields without discarding a valid stored countdown."""
+    result = {**_fresh_defaults(), **saved}
+    invalid_type = False
+    for key in ("date_of_birth", "death_datetime_iso"):
+        if not isinstance(result[key], str):
+            result[key] = ""
+    if result["date_of_birth"]:
+        try:
+            datetime.strptime(result["date_of_birth"], "%Y-%m-%d")
+        except ValueError:
+            result["date_of_birth"] = ""
+    if result["death_datetime_iso"] and get_death_datetime(result) is None:
+        result["death_datetime_iso"] = ""
+    if result["sex"] not in ("male", "female"):
+        result["sex"] = "male"
+    if type(result["start_on_boot"]) is not bool:
+        invalid_type = True
+        result["start_on_boot"] = False
+    for section in ("factors", "window"):
+        original = saved.get(section, {})
+        original = original if isinstance(original, dict) else {}
+        result[section] = {**DEFAULT_CONFIG[section], **original}
+        for key, default in DEFAULT_CONFIG[section].items():
+            value = result[section][key]
+            valid = type(value) is type(default)
+            if section == "window" and valid:
+                valid = (-100000 <= value <= 100000 if key in ("x", "y")
+                         else 1 <= value <= 10000)
+            if not valid:
+                invalid_type = True
+                result[section][key] = default
+    # Filling in missing keys is normal for older files, not damage.
+    repaired = invalid_type or any(result.get(key) != value for key, value in saved.items()
+                   if key not in ("factors", "window"))
+    for section in ("factors", "window"):
+        original = saved.get(section, {})
+        repaired |= (not isinstance(original, dict) or
+                     any(result[section].get(k) != v for k, v in original.items()))
+    return result, repaired
+
+
+def _preserve_damaged_file() -> None:
+    """Copy, rather than move, the original; never overwrite recovery evidence."""
+    from uuid import uuid4
+    destination = CONFIG_PATH + ".corrupt"
+    if os.path.exists(destination):
+        destination += "." + uuid4().hex
+    with open(CONFIG_PATH, "rb") as source, open(destination, "xb") as target:
+        target.write(source.read())
+        target.flush()
+        os.fsync(target.fileno())
+
+
+def load_config(on_warning: Callable[[str], None] | None = None) -> dict:
+    """Read the countdown, repairing preferences or recovering a known-good copy.
+
+    Loading never rewrites the main file or recalculates a date. Read failures
+    remain protected: a later save must be able to read/preserve that original.
     """
-    if not os.path.exists(CONFIG_PATH):
-        return _fresh_defaults()
+    warn = on_warning or (lambda message: None)
+    primary = None
+    try:
+        primary, repaired = _normalize(_read_object(CONFIG_PATH))
+        if repaired:
+            try:
+                _preserve_damaged_file()
+            except OSError:
+                warn("Some settings need repair, but their original could not be backed up.")
+            else:
+                warn("Some settings were repaired. The original was kept in a .corrupt copy.")
+        if get_death_datetime(primary) is not None:
+            return primary
+    except FileNotFoundError:
+        pass
+    except (ValueError, UnicodeDecodeError):
+        try:
+            _preserve_damaged_file()
+        except OSError:
+            warn("Settings are damaged and their original could not be backed up.")
+        else:
+            warn("Settings are damaged. The original was kept in a .corrupt copy.")
+    except OSError:
+        warn("Settings could not be read. Check the file permissions or OneDrive availability.")
 
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            saved = json.load(f)
-        if not isinstance(saved, dict):
-            raise ValueError("settings.json does not contain a JSON object")
-    except (json.JSONDecodeError, ValueError, OSError, UnicodeDecodeError):
-        try:
-            os.replace(CONFIG_PATH, CONFIG_PATH + ".corrupt")
-        except OSError:
-            pass  # Couldn't preserve it — still better to start than to crash
-        return _fresh_defaults()
+        backup, _ = _normalize(_read_object(CONFIG_PATH + ".bak"))
+        if get_death_datetime(backup) is not None:
+            warn("Your saved countdown was recovered from settings.json.bak. "
+                 "No date was recalculated.")
+            return backup
+    except (OSError, ValueError, UnicodeDecodeError):
+        pass
+    if primary is None and os.path.exists(CONFIG_PATH):
+        warn("No usable countdown backup was found. Review Settings before saving a new target.")
+    return primary if primary is not None else _fresh_defaults()
 
-    # Merge with defaults so any new keys we add in the future are included
-    merged = {**DEFAULT_CONFIG, **saved}
-    merged["factors"] = {**DEFAULT_CONFIG["factors"], **saved.get("factors", {})}
-    merged["window"] = {**DEFAULT_CONFIG["window"], **saved.get("window", {})}
-    return merged
+
+def _atomic_write(path: str, data: dict) -> None:
+    """Use a unique neighboring temporary file, then atomically replace the file."""
+    fd, temporary = tempfile.mkstemp(prefix=os.path.basename(path) + ".",
+                                     suffix=".tmp", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def save_config(config: dict) -> None:
+    """Preserve the previous usable countdown before committing a new one.
+
+    Permission/read failures propagate, preventing an unreadable original from
+    being replaced by defaults. A failed backup also stops the save.
     """
-    Save settings to disk, atomically.
+    proposed, repaired = _normalize(config)
+    if repaired:
+        raise ValueError("Settings contain invalid values; nothing was saved.")
+    previous = None
+    try:
+        raw = _read_object(CONFIG_PATH)
+        previous, damaged = _normalize(raw)
+        if damaged:
+            _preserve_damaged_file()
+    except FileNotFoundError:
+        pass
+    except (ValueError, UnicodeDecodeError):
+        _preserve_damaged_file()
+    if previous is not None and get_death_datetime(previous) is not None:
+        if get_death_datetime(proposed) is None:
+            raise ValueError("Cannot replace a saved countdown with an empty target.")
+        _atomic_write(CONFIG_PATH + ".bak", previous)
+    elif not os.path.exists(CONFIG_PATH + ".bak") and get_death_datetime(proposed) is not None:
+        # A first successful setup also has a recovery copy.
+        _atomic_write(CONFIG_PATH + ".bak", proposed)
+    _atomic_write(CONFIG_PATH, proposed)
 
-    Writing straight to settings.json meant truncating it first and then
-    filling it back in. Anything interrupting that gap -- a crash, a power
-    cut, OneDrive syncing the folder mid-write -- left a half-written file,
-    and settings.json is the only copy of your death date.
 
-    So we write the new contents to a temporary file alongside it, flush all
-    the way down to the physical disk, and then rename it into place.
-    os.replace() is atomic on Windows and POSIX alike: any reader sees either
-    the complete old file or the complete new one, never a partial write.
-    """
-    temp_path = CONFIG_PATH + ".tmp"
-
-    with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
-        f.flush()          # Push Python's buffer into the OS
-        os.fsync(f.fileno())  # Push the OS buffer onto the actual disk
-
-    os.replace(temp_path, CONFIG_PATH)  # Atomic swap
+def commit_config(current: dict, proposed: dict) -> None:
+    """Keep widget/app references intact; update memory only after disk succeeds."""
+    snapshot = deepcopy(proposed)
+    save_config(snapshot)
+    current.clear()
+    current.update(snapshot)
 
 
 def get_death_datetime(config: dict) -> datetime | None:
@@ -120,17 +222,19 @@ def get_death_datetime(config: dict) -> datetime | None:
     This is the key function — we always use the STORED date, never recalculate.
     """
     iso = config.get("death_datetime_iso", "")
-    if not iso:
+    if not isinstance(iso, str) or not iso:
         return None
     try:
-        return datetime.fromisoformat(iso)
-    except ValueError:
+        parsed = datetime.fromisoformat(iso)
+        return parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo else parsed
+    except (ValueError, OverflowError, OSError):
         return None
 
 
 def has_profile(config: dict) -> bool:
     """Return True if the user has filled in their date of birth."""
-    return bool(config.get("date_of_birth", "").strip())
+    dob = config.get("date_of_birth", "")
+    return isinstance(dob, str) and bool(dob.strip())
 
 
 def stored_date_matches_inputs(
@@ -168,4 +272,6 @@ def stored_date_matches_inputs(
     # settings.json may carry keys we have since dropped; those are irrelevant
     # to the current calculation and must not force a needless recalculation.
     stored_factors = config.get("factors", {})
+    if not isinstance(stored_factors, dict):
+        return False
     return all(stored_factors.get(key, False) == value for key, value in factors.items())

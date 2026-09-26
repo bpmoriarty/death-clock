@@ -18,7 +18,7 @@ You need [uv](https://docs.astral.sh/uv/) installed. Then:
 ```bash
 git clone https://github.com/bpmoriarty/death-clock.git
 cd death-clock
-uv sync          # creates .venv and installs the exact locked versions
+uv sync --python 3.12  # creates .venv and installs the locked dependencies
 ```
 
 Then launch it:
@@ -28,13 +28,26 @@ uv run python -m death_clock.main
 ```
 
 On first launch the Settings window opens, since there's no profile yet. Fill in
-your date of birth, sex, and health factors, then press **Save & Recalculate
-Death Date**.
+your date of birth, sex, and health factors, then press **Save settings**.
 
 ## Daily use
 
-Double-click **`run.pyw`**. The `.pyw` extension makes Windows open it with
-`pythonw.exe`, so no black console window appears — just the widget.
+Double-click **`Start Death Clock.vbs`**, or double-click
+**`Create Desktop Shortcut.vbs`** once to create a desktop shortcut. Both use the
+project's Python environment without a console window and do not depend on the
+system's `.pyw` file association. `run.pyw` remains available when that association
+works; it now checks and launches the project interpreter instead of borrowing
+its packages.
+
+Opening the clock again brings the existing instance forward, including when
+hidden. If first-run Settings is open, that same form is brought forward. Only
+one updated clock per Windows user can own the settings, including across copies
+of this project. The first copy opened wins.
+
+**When upgrading from older code:** exit the existing clock once before using the
+new launcher. Already-running older versions do not have the new instance lock.
+If launch-at-login is enabled, open Settings in the updated clock and Save once
+to refresh the login entry to the checked launcher; the target stays unchanged.
 
 | Action | How |
 |---|---|
@@ -42,12 +55,44 @@ Double-click **`run.pyw`**. The `.pyw` extension makes Windows open it with
 | Resize it | Drag the ◢ grip in the bottom-right corner |
 | Settings / Hide / Exit | Right-click the widget |
 | Bring it back after hiding | Click the tray icon |
+| Recover a misplaced clock | Tray menu → Reset position |
 | Launch at Windows login | Tick the box in Settings |
 
-## Your data stays local
+The clock remembers positions on any connected monitor, including monitors to
+the left or above the primary display. If its monitor disappears, it moves back
+into a usable work area. A layout check runs every five seconds and waits until
+you finish dragging/resizing. **Reset position** centers it on the primary screen
+and shows it, without changing the saved countdown. Automatic recovery keeps a
+hidden clock hidden.
+
+Resizing is limited to the current monitor's usable area. Text is measured to fit
+the chosen size, including the date label and resize grip.
+
+## Launch troubleshooting
+
+The launcher only checks the environment; it never installs or upgrades anything.
+If startup fails, it shows an actionable error. Small diagnostic logs are stored
+under `%LOCALAPPDATA%\DeathClock\logs`, outside the OneDrive project. They contain
+error categories/types and code locations, not profile values, exception messages,
+or captured process output. The Python log rotates at 32 KB with one previous
+copy; the Windows bootstrap log is also capped around 32 KB.
+
+For a genuinely missing/broken environment, exit the clock normally, keep
+`settings.json` and its backup safe, then run `uv sync --python 3.12` from this
+folder. Never synchronize dependencies while the clock is running. Reopen
+`Start Death Clock.vbs` afterward. Recreate the shortcut and re-save the login
+setting if you move the project folder.
+
+The `.vbs` entry points require Windows Script Host. If your Windows configuration
+disables it, use `uv run --no-sync python -m death_clock.main` from this folder;
+that entry point has the same single-instance protection. Do not change Windows
+security policy just to enable a shortcut.
+
+## Your saved data
 
 `settings.json` holds your date of birth, health factors, and death date. It is
-listed in `.gitignore` and **is never committed**. `settings.example.json` shows
+excluded from Git by `.gitignore`. Files in a OneDrive folder may still sync
+between computers; Git exclusion does not prevent that. `settings.example.json` shows
 the file's shape without any personal data.
 
 To move your exact countdown to another computer, copy `settings.json` across by
@@ -59,6 +104,20 @@ Settings freely — changing only a preference like "launch at login" leaves the
 stored death date exactly as it was.
 
 ---
+
+## Countdown protection
+
+After a target is saved with the updated app, `settings.json.bak` holds a recovery
+copy. Later saves keep the previous usable countdown in that rolling backup.
+If the main settings are damaged or missing, the app can load the backup and
+explain what happened without recalculating your target. Damaged originals are
+kept as `settings.json.corrupt` (with unique suffixes for additional copies).
+These files also contain personal information and are excluded from Git.
+
+A failed settings save leaves the running target unchanged and displays an error
+so you can retry. Saving preferences preserves the target exactly. Changing the
+profile asks you to confirm before replacing an existing target. A Windows-login
+registration failure is reported separately if the countdown itself was saved.
 
 ## How the countdown works
 
@@ -100,7 +159,12 @@ gone is the discontinuity.
 
 | File | What it does |
 |---|---|
-| `run.pyw` | Double-click launcher (no console window) |
+| `Start Death Clock.vbs` | Checked Windows launcher (no console window) |
+| `Create Desktop Shortcut.vbs` | Creates the desktop shortcut |
+| `run.pyw` | Python bootstrap for the Windows launcher or `.pyw` association |
+| `death_clock/launcher.py` | Verifies and starts the project's own interpreter |
+| `death_clock/instance.py` | Single-instance lock and reveal requests |
+| `death_clock/diagnostics.py` | Bounded local error reporting without profile data |
 | `death_clock/main.py` | Entry point |
 | `death_clock/app.py` | Orchestrator — wires the widget, tray, and settings together |
 | `death_clock/widget.py` | The floating countdown overlay |

@@ -1,218 +1,118 @@
-# Project: Death Clock
+# Death Clock — project status
 
-## What This Is
-A desktop app that counts down to an estimated death date using SSA actuarial life tables (2021) plus adjustments for health/lifestyle factors. The widget floats on top of other apps, is draggable and resizable, and persists the countdown across reboots.
+## Purpose and current use
 
----
+A personal reminder to use time well, not a longevity prediction or a product for
+wider distribution. Used successfully on several computers, currently with one
+monitor per setup. Multiple-monitor support is future-proofing.
 
-## Current Status
+## Active work
 
-**Phase:** Hardened — back to optional polish
+The complete checklist is in [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md). Keep it
+updated as work progresses. Delete it only after all accepted work is complete
+and its final outcome is recorded here.
 
-**Last Session:** 2026-08-11
+1. **Protect the saved countdown:** implemented; automated checks passed.
+2. **Window placement and monitor recovery:** implemented; automated checks passed.
+3. **Single instance and reliable launching:** implemented; automated checks passed.
+4. **Shared target vs device preferences:** next.
+5. **Modest display controls:** planned.
 
-**Overall Health:** 🟢 Working — in continuous daily use, now with 66 tests
+Work is paused at the user's request. Resume with priority 4 when requested.
 
-> ⚠️ **The running widget predates the Save fix.** It was relaunched earlier
-> today and is showing the correct date, so this is not urgent — but Settings
-> in that instance will still recalculate on every Save. Restart it when
-> convenient.
+Additional settings, target-selection, source-data, privacy, and code-cleanup
+items are tracked in the plan. No automatic recalculation or medical-model
+expansion is planned.
 
-### What's Working
-- Always-on-top countdown widget (gray background, green numerals)
-- Drag to move, resize grip in bottom-right corner
-- Right-click menu: Settings | Hide | Exit
-- System tray icon with Show | Settings | Exit
-- Settings window (CustomTkinter): DOB, sex, all health factors, boot startup toggle
-- Death date calculated once on Settings save and stored in `settings.json` as `death_datetime_iso`
-- Countdown resumes correctly after app is closed and reopened (no reset)
-- Boot startup registration via Windows Registry (opt-in toggle in Settings)
-- **Now under version control** — private GitHub repo, personal data excluded
-- **Dependencies locked** via `pyproject.toml` + `uv.lock`
+## Latest increment — single instance and reliable launching
 
-- **66 tests** over the three pure-logic modules (`uv run pytest`)
-- Save only recalculates the death date when DOB, sex or factors actually
-  changed — so carrying `settings.json` to another machine survives a visit to
-  Settings
+- Acquire a Windows user-scoped mutex before importing the UI or reading settings.
+  Repeat launches signal the owner and exit; requests queue during startup. A
+  crashed owner does not leave a stale lock. Separate project copies share the lock.
+- Reveal hidden clocks and reuse/raise the existing Settings window, including
+  first-run Settings. Poll reveal requests on the Tk thread.
+- Replace package-path injection with an explicit project-interpreter probe and
+  pythonw launch. No automatic dependency installation or environment rebuilding.
+- Provide Start Death Clock.vbs and Create Desktop Shortcut.vbs; route future login
+  registration through the same checked Windows bootstrap. Paths with spaces work.
+- Report launch, UI callback, and tray-thread failures. Keep bounded logs under
+  LOCALAPPDATA/DeathClock/logs without profile values or exception messages.
+- Close the tray and root window before releasing the instance lock.
 
-### What's Broken or Incomplete
-Nothing serious. Remaining items are all cosmetic or low-priority:
+Adoption: exit the currently running pre-lock version once, then use the new
+launcher. If login startup is enabled, Save in the updated Settings once to
+refresh its registry entry (preference-only saves retain the target). No actual
+shortcut or registry entry was changed during implementation.
 
-- 🟡 Boot-startup checkbox swallows all failures silently — no feedback if it fails
-- 🟡 Countdown displays 365-day years while the math uses 365.25 (a few days' cosmetic difference)
-- 🟡 `widget.is_visible()` is dead code; Settings has no Cancel button
-- No confirmation dialog when exiting (minor — low priority)
-- Always-on-top does not work over exclusive-fullscreen games (Windows OS limitation, not fixable)
+## Completed — window placement and monitor recovery
 
-### Fixed This Session
-- ✅ **First-run zombie process** — dismissing Settings on a machine with no profile
-  left an invisible, unkillable-except-Task-Manager process. Was on the path for
-  setting up a second computer.
-- ✅ **Font scaling on launch** — a resized window came back with default-size text
-- ✅ **Atomic `settings.json` writes** — plus fallback if the file is ever corrupt
-- ✅ **Widget drift** — saved x of -27 was rewritten to 0 every launch
-- ✅ **Death date reproducibility** — same inputs now give the same answer
+- Query each Windows monitor's usable work area, including negative coordinates
+  and taskbar reservations. Preserve reachable positions, including slightly
+  off-screen placements, rather than forcing everything onto the primary screen.
+- Recover missing-monitor/off-screen positions and constrain oversized windows to
+  the available work area. Desktop gaps do not count as reachable space.
+- Check for layout changes every five seconds; defer recovery during drag/resize.
+  Recovery does not reveal a hidden clock. A temporary monitor-query failure
+  retains the last known layout instead of moving the clock unnecessarily.
+- Add **Reset position** to the tray menu: center on the primary monitor, reveal
+  the widget, and save its placement without changing the target.
+- Constrain resize grip movement to the current work area; normal minimum size is
+  280 by 90, reduced only when the available work area itself is smaller.
+- Fit all three text rows using real font measurements and pixel-sized fonts,
+  refreshing after resizing and display updates. Account for the resize grip.
+- Move monitor discovery and geometry rules into death_clock/placement.py.
 
----
+## Previous increment — countdown protection
 
-## What We're Doing Now
+- Validate nested settings and repair invalid preferences without discarding a
+  usable target. A target can run even if the birth-date field is damaged.
+- Create settings.json.bak on the first target save; later saves back up the
+  previous usable countdown. This is a rolling backup, not permanent history.
+- Recover from the backup if the primary target is missing or unusable. Warn the
+  user; never recalculate during recovery or rewrite the primary during loading.
+- Preserve damaged originals in unique .corrupt copies. Stop saves if an
+  unreadable original or failed backup cannot safely be preserved.
+- Use unique temporary files for atomic writes and remove them after failures.
+- Save proposed settings before changing the live state. Show write errors and
+  allow retry; failed saves do not change the running target.
+- Preserve the exact stored target string on preference-only saves. Ask before
+  replacing an existing target and disable Save after success.
+- Show startup-registration failures separately from successful countdown saves.
+- Report window-save failures and still allow exit. Closing first-run Settings
+  without saving does not write empty defaults.
+- Ignore backup, recovery, and temporary files in Git.
 
-Nothing outstanding. All review findings are fixed, tested, and pushed.
-`uv sync` has been run — `.venv` now matches the lockfile (pillow 12.3.0,
-packaging 26.3, plus the pytest dev group). The widget was relaunched on the
-fixed code and the corrected death date (2066-08-26) is saved and displaying.
+## Verification
 
-One thing still waiting on you:
+**160 tests passed** using the project's own Python 3.12.10. This includes the
+previous 136 checks plus 24 launch checks covering native duplicate processes,
+simultaneous startup, abandoned locks, exact interpreter selection, error logs,
+startup quoting, cleanup, Windows-script compilation, and real shortcut creation
+in a temporary fake desktop. All settings tests use isolated fictional profiles.
 
-1. **Restart the widget once more** to pick up the Save fix (item 12)
+An independent process successfully revealed an invisible real-Tk test clock
+using a unique test-only lock name and an in-memory profile. Earlier placement
+work also passed 12 invisible real-Tk checks across four sizes and three Tk
+scaling values, plus actual Windows work-area enumeration.
 
-After that it's optional polish only — a desktop shortcut, and re-checking the
-widget size now that fonts scale properly.
+The project interpreter and UI imports work outside the sandbox. The earlier
+failure came from review-session access restrictions, not a broken environment.
+No repair or dependency synchronization was needed or performed.
 
-> **Note on `uv sync` output:** it warns "Failed to hardlink files; falling back
-> to full copy." That is expected and harmless — the uv cache and this OneDrive
-> folder are on different filesystems, so uv copies instead of hardlinking.
-> Setting `link-mode = "copy"` under `[tool.uv]` would silence it.
+The user confirmed that the VBS launcher opens the clock successfully.
+Remaining manual acceptance: clicking the real desktop shortcut/tray, Windows
+login, physical monitor unplug/replug, and mixed Windows
+DPI. The real clock was not restarted or signaled by the tests. No tool wrote the
+live settings. Its file hash changed while the live application was in use; the
+current file and rolling backup differ only in window placement and have the
+same saved target. We did not restore or overwrite that live change.
 
----
+## Lasting rules
 
-## Recent Decisions
-
-| Date | Decision | Why |
-|------|----------|-----|
-| 2026-08-11 | Save keeps the stored date when inputs are unchanged | The registry entry for launch-at-login is per-machine, so a copied `settings.json` shows the box ticked with no entry behind it. Fixing that meant pressing Save, which silently recalculated the carried-over death date |
-| 2026-08-11 | Set up git + private GitHub repo | No version control existed at all; the only safety net was a manual `death_clock_archive/` copy |
-| 2026-08-11 | `settings.json` excluded from git | Holds date of birth and health conditions; `settings.example.json` documents its shape instead |
-| 2026-08-11 | Repo is private | Personal nature of the app; can be flipped public later |
-| 2026-08-11 | Interpolate the SSA table at fractional age | Death date was not reproducible from its inputs — it drifted ~1 day later per day and snapped ~11 months backwards each birthday |
-| 2026-08-11 | Pinned dependency upper bounds | Unbounded constraints resolved customtkinter to 6.0.0, a major version jump from the working 5.2.2 |
-| 2026-08-11 | Widget position no longer clamped to x≥0 | Saved position of -27 was rewritten to 0 on every launch, drifting the widget right |
-| 2026-04-05 | Started completely from scratch | Previous version had persistent reset and boot startup bugs; fresh design was cleaner |
-| 2026-04-05 | Store `death_datetime_iso` in settings.json | The core fix — death date calculated once on Save, never recalculated on launch |
-| 2026-04-05 | Gray background (#2d2d2d), green text (#44cc77) | Previous black/red was too aggressive |
-| 2026-04-05 | Hide via right-click menu (no close button on widget) | Cleaner look; tray icon handles restore |
-| 2026-04-05 | Archived old code to `death_clock_archive/` | Preserved for reference — now redundant, git holds the history |
-| 2026-04-05 | Boot startup opt-in via Settings checkbox | More reliable than auto-registering; user controls it |
-
----
-
-## Next Steps
-
-1. [x] Reset / hide-show / double-click / reboot tests — all confirmed
-2. [x] Set up git and a private GitHub repo
-3. [x] Migrate from bare `requirements.txt` to `pyproject.toml` + `uv.lock`
-4. [x] Fix the window drift and the death-date reproducibility bug
-5. [x] Fix the first-run zombie process
-6. [x] Restore font scaling on launch
-7. [x] Make `settings.json` writes atomic and handle a corrupt file
-8. [x] Add a pytest suite (66 tests over config / life_expectancy / ssa_life_table)
-9. [x] Delete the now-redundant `requirements.txt` and `death_clock_archive/`
-10. [x] **Restart the widget** — running the fixed code, date saved and confirmed
-11. [x] **Run `uv sync`** with the app closed, to sync `.venv` with the lockfile
-12. [x] Stop Save from clobbering a carried-over death date
-13. [ ] Restart the widget again to pick up the Save fix
-14. [ ] Desktop shortcut to `run.pyw` for easy daily launching
-15. [ ] Re-check widget size now that fonts scale on launch
-16. [ ] Optional: the four 🟡 cosmetic items above
-
----
-
-## Important Files
-
-| File | What It Does |
-|------|--------------|
-| `run.pyw` | Double-click launcher (uses .pyw to suppress console window) |
-| `pyproject.toml` | Dependencies and their version bounds |
-| `uv.lock` | Exact resolved versions — `uv sync` reproduces this environment |
-| `settings.json` | Persisted config — **git-ignored**, holds personal data |
-| `settings.example.json` | Template showing the config shape, no personal data |
-| `death_clock/app.py` | Main orchestrator — coordinates widget, tray, settings |
-| `death_clock/widget.py` | The floating countdown overlay |
-| `death_clock/settings_window.py` | CustomTkinter settings form |
-| `death_clock/config.py` | Load/save settings.json; `get_death_datetime()` is the key function |
-| `death_clock/life_expectancy.py` | Actuarial calculation — called only when user saves settings |
-| `death_clock/ssa_life_table.py` | SSA 2021 life table data (male/female by age) |
-| `death_clock/startup.py` | Windows Registry boot startup registration |
-| `tests/` | 66 pytest tests over the non-GUI modules |
-
----
-
-## Things Claude Should Remember
-
-- The death date must NEVER be recalculated on app launch — only when the user explicitly saves settings
-- `death_datetime_iso` in settings.json is the source of truth for the countdown
-- The stored date is now **2066-08-26** (saved 2026-08-11). The earlier
-  2067-07-12 was inflated by the drift bug; the correction has been applied.
-- **Pressing Save no longer recalculates unless DOB, sex or factors changed.**
-  `config.stored_date_matches_inputs()` gates it. This is what makes copying
-  `settings.json` to a second computer safe.
-- `age_float` uses `(now - dob).days`, a whole number — so the calculation is
-  byte-identical within a single calendar day, and drifts only across days
-  (~3 days per 6 months at Brian's factor mix)
-- **Never run `uv sync` while the widget is running** — Windows can't replace files a live process holds open. Exit via the tray first.
-- Use `uv run python -m death_clock.main` to run during development
-- Run the tests with `uv run pytest`. To run them without touching `.venv` while
-  the widget is live: `uv run --no-project --with pytest pytest`
-- `callable` is a builtin function, not a type — `callable | None` in a function
-  signature raises TypeError at import and stops the app booting
-- Double-click `run.pyw` for a clean no-console launch
-- Always-on-top does NOT work over exclusive-fullscreen games (Windows OS limitation — nothing can)
-- Brian is learning to code — explain changes in plain language and comment the code
-- Commit after each working feature; the repo is `bpmoriarty/death-clock` (private)
-
----
-
-## Session Log
-
-### 2026-08-11
-- Reviewed full project state; confirmed the app has been running continuously since 2026-07-31
-- **Set up git** and pushed to a new private GitHub repo (`bpmoriarty/death-clock`),
-  capturing the original working code as a baseline commit before any changes
-- `settings.json` excluded from version control; verified absent from GitHub
-- **Fixed widget drift:** saved x of -27 was being clamped to 0 on every launch
-- **Fixed death-date reproducibility:** the calculation mixed a continuous age with a
-  whole-number table lookup, so the same inputs gave answers spread over 368 days
-  depending on when you pressed Save. Now interpolates; spread is down to 9 days,
-  and the birthday discontinuity is gone.
-- **Migrated to uv:** `pyproject.toml` + `uv.lock` replace unpinned `requirements.txt`.
-  Caught that unbounded constraints would have upgraded customtkinter 5.2.2 → 6.0.0.
-- Added `README.md` and `settings.example.json`
-- Code review surfaced three more bugs — **all now fixed, each in its own commit**:
-  - **First-run zombie process:** dismissing the Settings window on a machine with
-    no profile left an invisible process with no widget, no tray icon and no
-    console. Verified fixed by driving the real window's close handler.
-  - **Font scaling:** `_scale_fonts()` only ran while dragging the grip, so a
-    resized window returned with default-size text. *Visible change: a 280x90
-    window now renders the countdown at font 17 rather than 26.*
-  - **Atomic writes:** `settings.json` is now written via a temp file and
-    `os.replace()`, with a fallback to defaults (and a preserved `.corrupt` copy)
-    if the file is ever unreadable.
-- **Added 56 tests** over `config`, `life_expectancy` and `ssa_life_table`. Writing
-  them caught a bad type annotation (`callable | None`) that would have stopped the
-  app booting, and corrected an overstated claim about residual drift.
-- **Deleted** `death_clock_archive/`, `run_archive.pyw` and `requirements.txt` —
-  all recoverable from the initial commit via `git show a72aa1a:<path>`
-- Relaunched the widget on the fixed code; pressed Save; confirmed the corrected
-  date (2066-08-26) is showing. Ran `uv sync` — the "failed to hardlink" warning
-  it prints is expected inside OneDrive and harmless.
-- **Fixed Save clobbering a carried-over date.** Found while writing up the
-  move-to-a-new-computer instructions: the launch-at-login registry entry is
-  per-machine, so the one thing you must press Save for on a second computer was
-  also the thing that would overwrite the date you copied there. Save now
-  recalculates only when DOB, sex or factors changed. Ten new tests; 66 total.
-
-### 2026-04-05 (session 2)
-- Completed all user acceptance tests:
-  - Reset test passed: countdown does not reset on close/reopen
-  - Hide/show test passed: right-click Hide and tray restore both work
-  - Double-click `run.pyw` confirmed: app launches independently, stays open
-  - Reboot test passed: app auto-launches at Windows login via Registry
-- App is fully functional and in daily use
-
-### 2026-04-05 (session 1)
-- Reviewed previous broken version (reset bug root cause: death date was never saved to disk)
-- Designed fresh architecture from scratch; archived old `death_clock/` folder
-- Built all modules: config, life_expectancy, widget, settings_window, app, startup, main, run.pyw
-- Fixed `pady` double-keyword bug in settings_window.py
-- Fixed invalid escape sequence in startup.py docstring
-- App confirmed launching and displaying countdown
+- The stored target is authoritative. Never recalculate on launch, recovery,
+  migration, or preference-only save.
+- Do not edit the live profile or restart the running app just to run tests.
+- Test with fictional profiles and temporary files; never use actual health data.
+- Never synchronize dependencies while the widget is running.
+- Runtime data is excluded from Git, but files inside OneDrive may still sync.
+- Keep this status concise. Previous implementation history remains in Git.

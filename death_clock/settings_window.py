@@ -13,12 +13,13 @@ When you click Save, it:
 Built with CustomTkinter for a cleaner look than plain tkinter.
 """
 
+from copy import deepcopy
 import customtkinter as ctk
 from datetime import datetime
 from tkinter import messagebox
 
 from .life_expectancy import compute_death_datetime, FACTOR_LABELS
-from .config import save_config, get_death_datetime, stored_date_matches_inputs
+from .config import commit_config, get_death_datetime, stored_date_matches_inputs
 
 
 # Match the rest of the app's dark theme
@@ -107,7 +108,7 @@ class SettingsWindow:
         ctk.CTkLabel(
             self.win,
             text="This information is used to estimate your death date.\n"
-                 "Saving will recalculate and lock in your death date.",
+                 "Your saved target changes only when you confirm a new one.",
             font=("Consolas", 11),
             text_color="#aaaaaa",
             justify="center",
@@ -184,15 +185,16 @@ class SettingsWindow:
         ).pack(anchor="w", padx=30, pady=2)
 
         # ── Save Button ───────────────────────────────────────────────────────
-        ctk.CTkButton(
+        self.save_button = ctk.CTkButton(
             self.win,
-            text="Save & Recalculate Death Date",
+            text="Save settings",
             command=self._save,
             font=("Consolas", 13, "bold"),
             height=40,
             fg_color="#336644",
             hover_color="#44aa66",
-        ).pack(**pad, pady=(16, 4))
+        )
+        self.save_button.pack(**pad, pady=(16, 4))
 
         # Shows the current stored death date for reference
         stored_iso = self.config.get("death_datetime_iso", "")
@@ -221,6 +223,9 @@ class SettingsWindow:
 
     def _save(self):
         """Validate inputs, recalculate death date, and save to disk."""
+
+        if self._saved:
+            return
 
         # ── Validate date of birth ─────────────────────────────────────────
         dob_str = self.dob_entry.get().strip()
@@ -264,26 +269,49 @@ class SettingsWindow:
         else:
             death_dt = compute_death_datetime(dob, sex, factors)
 
-        # ── Update config ──────────────────────────────────────────────────
-        self.config["date_of_birth"]    = dob_str
-        self.config["sex"]              = sex
-        self.config["factors"]          = factors
-        self.config["death_datetime_iso"] = death_dt.isoformat()
-        self.config["start_on_boot"]    = start_on_boot
+        if not keeping_stored_date and get_death_datetime(self.config) is not None:
+            old_dt = get_death_datetime(self.config)
+            if not messagebox.askyesno(
+                "Change saved target?",
+                f"Current target: {old_dt:%B %d, %Y}\n"
+                f"Proposed target: {death_dt:%B %d, %Y}\n\n"
+                "Replace your saved countdown? A backup will be kept.",
+                parent=self.win,
+            ):
+                return
 
-        # ── Handle startup registration ────────────────────────────────────
+        proposed = deepcopy(self.config)
+        proposed.update(date_of_birth=dob_str, sex=sex, factors=factors,
+                        start_on_boot=start_on_boot)
+        # Preserve the original string exactly on preference-only saves.
+        if not keeping_stored_date:
+            proposed["death_datetime_iso"] = death_dt.isoformat()
+        try:
+            commit_config(self.config, proposed)
+        except (OSError, ValueError) as error:
+            messagebox.showerror(
+                "Settings not saved",
+                "Your running countdown has not changed. Check disk space, file "
+                f"permissions, or OneDrive, then try again.\n\n{error}",
+                parent=self.win,
+            )
+            return
+        self._saved = True
+        self.save_button.configure(state="disabled")
+
+        # Registration is a separate Windows operation; a failure must be visible.
         try:
             from .startup import add_to_startup, remove_from_startup
             if start_on_boot:
                 add_to_startup()
             else:
                 remove_from_startup()
-        except Exception:
-            pass  # Startup registration is best-effort — don't crash if it fails
-
-        # ── Save to disk ───────────────────────────────────────────────────
-        save_config(self.config)
-        self._saved = True
+        except Exception as error:
+            messagebox.showwarning(
+                "Countdown saved; Windows startup not updated",
+                f"Your target was saved, but the login setting could not be applied.\n\n{error}",
+                parent=self.win,
+            )
 
         # ── Notify the app ─────────────────────────────────────────────────
         self.on_save(self.config, death_dt)
