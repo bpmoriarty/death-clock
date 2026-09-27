@@ -93,7 +93,8 @@ class SettingsWindow:
         ctk.CTkLabel(self.legacy_frame, text="Optional legacy calculation",
                      font=("Consolas", 14, "bold")).pack(pady=8)
         ctk.CTkLabel(self.legacy_frame, text="An approximate, unvalidated reminder formula—not a personal "
-                     "longevity prediction. Its table and factor adjustments have not been verified. "
+                     "longevity prediction. Its base table matches SSA 2021 (2024 report); "
+                     "its factor adjustments are still unvalidated. "
                      "A new calculation depends on today's date. You will preview it before saving.",
                      wraplength=380, text_color="#cccccc").pack(padx=12, pady=6)
         self.sex_var = ctk.StringVar(value=self.config.get("sex", "male"))

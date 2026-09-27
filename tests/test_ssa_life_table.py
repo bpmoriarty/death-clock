@@ -1,9 +1,8 @@
 """
 Tests for the SSA life table lookup.
 
-The table itself is just data copied from ssa.gov. What's worth testing is the
-lookup around it -- particularly the interpolation, which is what stopped the
-death date jumping on birthdays.
+Verify each runtime value against the pinned official source, then exercise
+the application's interpolation and boundary rules independently.
 """
 
 import pytest
@@ -17,17 +16,16 @@ from death_clock.ssa_life_table import (
 
 def test_exact_ages_return_the_table_value():
     """A whole-number age should give back exactly what the table says."""
-    assert get_life_expectancy(39, "male") == 36.63
-    assert get_life_expectancy(0, "male") == 73.50
-    assert get_life_expectancy(65, "female") == 19.25
+    assert get_life_expectancy(39, "male") == 37.45
+    assert get_life_expectancy(0, "male") == 73.54
+    assert get_life_expectancy(65, "female") == 19.75
 
 
 def test_halfway_between_two_ages_is_the_midpoint():
     """
-    At 39.5 we're halfway between e(39)=36.63 and e(40)=35.72,
-    so we expect the average of the two: 36.175.
+    At 39.5 interpolate the official e(39)=37.45 and e(40)=36.58.
     """
-    assert get_life_expectancy(39.5, "male") == pytest.approx(36.175)
+    assert get_life_expectancy(39.5, "male") == pytest.approx(37.015)
 
 
 def test_interpolation_is_proportional():
@@ -81,3 +79,13 @@ def test_sex_is_case_insensitive():
 def test_both_tables_cover_every_age_to_119():
     assert set(MALE_LIFE_EXPECTANCY) == set(range(120))
     assert set(FEMALE_LIFE_EXPECTANCY) == set(range(120))
+
+
+def test_all_values_match_official_snapshot_and_hashes():
+    from tools.verify_ssa_source import verify
+    from death_clock.ssa_life_table import DATA_SHA256
+    from tools.verify_ssa_source import DATA_SHA256 as pinned_hash
+    assert DATA_SHA256 == pinned_hash
+    for age, male, female in verify():
+        assert MALE_LIFE_EXPECTANCY[age] == float(male), f"male age {age}"
+        assert FEMALE_LIFE_EXPECTANCY[age] == float(female), f"female age {age}"

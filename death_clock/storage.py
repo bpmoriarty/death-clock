@@ -12,6 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from . import config
+from .provenance import validate_provenance
 
 DISPLAY_DEFAULTS = {"opacity": 0.93, "lock_position": False,
                     "show_seconds": True, "display_mode": "years"}
@@ -171,7 +172,11 @@ def read_export(path: str) -> dict:
     normalized, repaired = config._normalize(profile)
     if repaired or config.get_death_datetime(normalized) is None:
         raise ValueError("The file contains an invalid profile or saved target.")
-    return {key: normalized[key] for key in PROFILE_KEYS}
+    result = {key: normalized[key] for key in PROFILE_KEYS}
+    if "target_provenance" in raw:
+        validate_provenance(raw["target_provenance"], result["death_datetime_iso"])
+        result["target_provenance"] = deepcopy(raw["target_provenance"])
+    return result
 
 
 def export_profile(current: dict, path: str) -> None:
@@ -186,10 +191,17 @@ def export_profile(current: dict, path: str) -> None:
     normalized, repaired = config._normalize(profile)
     if repaired or config.get_death_datetime(normalized) is None:
         raise ValueError("There is no valid saved countdown to export.")
+    if "target_provenance" in current:
+        validate_provenance(current["target_provenance"], profile["death_datetime_iso"])
+        profile["target_provenance"] = deepcopy(current["target_provenance"])
     config._atomic_write(str(destination), profile)
 
 
 def restore_profile(current: dict, profile: dict) -> None:
     proposed = deepcopy(current)
     proposed.update({key: profile[key] for key in PROFILE_KEYS})
+    proposed.pop("target_provenance", None)
+    if "target_provenance" in profile:
+        validate_provenance(profile["target_provenance"], proposed["death_datetime_iso"])
+        proposed["target_provenance"] = deepcopy(profile["target_provenance"])
     commit_settings(current, proposed, force=True)

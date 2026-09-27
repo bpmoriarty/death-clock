@@ -1,0 +1,4 @@
+# Keep pinned source/data hashes stable across Windows and other checkouts.
+docs/sources/*.html text eol=lf
+docs/sources/*.csv text eol=lf
+death_clock/data/*.csv text eol=lf

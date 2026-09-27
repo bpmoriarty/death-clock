@@ -1,13 +1,22 @@
 """Optional legacy reminder formula.
 
-The embedded table and multipliers are unverified. This is not a validated
+The table matches the SSA 2021/2024 report; the multipliers remain unverified. This is not a validated
 longevity model. A fresh calculation changes with the calculation date; only
 persisting the selected target makes the countdown stable across launches.
 """
 
 from datetime import datetime, timedelta
-from .ssa_life_table import get_life_expectancy
+from .ssa_life_table import get_life_expectancy, TABLE_ID, SOURCE_URL, DATA_SHA256
 from .factors import HAZARD_RATIOS, FACTOR_LABELS
+
+MODEL_VERSION = "legacy-ratio-v2-ssa2021tr2024"
+
+
+def calculation_provenance(now: datetime, target: datetime) -> dict:
+    return {"schema_version": 1, "method": "legacy_calculation",
+            "model_version": MODEL_VERSION, "table_id": TABLE_ID,
+            "source_url": SOURCE_URL, "table_sha256": DATA_SHA256,
+            "calculated_at_local": now.isoformat(), "target_iso": target.isoformat()}
 
 
 def compute_death_datetime(date_of_birth: datetime, sex: str, factors: dict,

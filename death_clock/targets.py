@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime
 
 from .config import get_death_datetime
-from .life_expectancy import compute_death_datetime
+from .life_expectancy import compute_death_datetime, calculation_provenance
 
 MODES = ("Keep saved target", "Choose a date", "Choose an age", "Legacy calculation")
 
@@ -18,6 +18,7 @@ def propose_target(current, mode, date_text="", age_text="", dob_text="", sex="m
             raise ValueError("Choose a target date or age, or restore a saved countdown.")
         return proposed
     if mode == "Choose a date":
+        proposed.pop("target_provenance", None)
         try:
             target = datetime.strptime(date_text.strip(), "%Y-%m-%d")
         except ValueError:
@@ -30,6 +31,7 @@ def propose_target(current, mode, date_text="", age_text="", dob_text="", sex="m
         if dob >= now:
             raise ValueError("Birth date must be in the past.")
         if mode == "Choose an age":
+            proposed.pop("target_provenance", None)
             try:
                 age = int(age_text.strip())
                 if not 1 <= age <= 150:
@@ -43,6 +45,7 @@ def propose_target(current, mode, date_text="", age_text="", dob_text="", sex="m
             if factors.get("current_smoker") and factors.get("former_smoker"):
                 raise ValueError("For a new calculation, select current smoker or former smoker, not both.")
             target = compute_death_datetime(dob, sex, factors, now=now)
+            proposed["target_provenance"] = calculation_provenance(now, target)
             proposed.update(sex=sex, factors=deepcopy(factors))
         proposed["date_of_birth"] = dob_text.strip()
     else:

@@ -15,17 +15,14 @@ tray icon.
 
 You need [uv](https://docs.astral.sh/uv/) installed. Then:
 
-```bash
+```powershell
 git clone https://github.com/bpmoriarty/death-clock.git
 cd death-clock
 uv sync --python 3.12  # creates .venv and installs the locked dependencies
 ```
 
-Then launch it:
-
-```bash
-uv run python -m death_clock.main
-```
+Then double-click **Start Death Clock.vbs** in the project folder. To launch
+from PowerShell instead, use `uv run --no-sync python -m death_clock.main`.
 
 On first launch Settings opens. Choose a reminder date or age and confirm the preview. You can also restore an existing countdown. The optional legacy calculation accepts
 a birth date, sex, and health factors.
@@ -54,7 +51,7 @@ to refresh the login entry to the checked launcher; the target stays unchanged.
 | Move it | Click and drag anywhere on the widget |
 | Resize it | Drag the ◢ grip in the bottom-right corner |
 | Settings / Hide / Exit | Right-click the widget |
-| Bring it back after hiding | Click the tray icon |
+| Bring it back after hiding | Tray menu → Show, or open the launcher again |
 | Recover a misplaced clock | Tray menu → Reset position |
 | Lock position, change opacity or countdown format | Clock or tray menu → Display… |
 | Launch at Windows login | Tick the box in Settings |
@@ -91,7 +88,9 @@ security policy just to enable a shortcut.
 
 ## Your saved data
 
-`settings.json` holds your date of birth, health factors, and death date. It is
+`settings.json` holds your saved reminder target and any profile inputs (birth
+date, sex, and health selections). A date-only target needs no birth date. New
+legacy calculations also retain source/model details and calculation time. It is
 excluded from Git by `.gitignore`. Files in a OneDrive folder may still sync
 between computers; Git exclusion does not prevent that. `settings.example.json` shows
 the file's shape without any personal data.
@@ -143,7 +142,8 @@ backs up the previous countdown, and retains that computer's preferences.
 It never recalculates. Cancel leaves everything unchanged. Export uses the saved
 profile; Restore discards unsaved form edits after confirmation.
 
-Exports contain the target, birth date, sex, and health selections. Keep them
+Exports contain the target, birth date, sex, health selections, and calculation
+details when present. They exclude device preferences. Keep them
 private. The default `*.deathclock-export.json` names are ignored by Git; a
 renamed export is not necessarily ignored. Exports in OneDrive may still sync.
 You can also copy `settings.json` before the first launch or select an existing
@@ -188,10 +188,10 @@ option for login-setting changes. Profile fields are hidden until needed.
   The target is midnight at the start of that date, in local time.
 - **Choose an age:** enter a whole age from 1 to 150 and your birth date. The
   target is midnight on that birthday; February 29 uses February 28 in non-leap years.
-- **Legacy calculation:** explicitly request a fresh result from the old formula.
-  It is approximate and unvalidated; neither the embedded table nor its factor
-  adjustments have been verified. Current/former smoker cannot both be selected
-  for a new calculation.
+- **Legacy calculation:** explicitly request a fresh result from the legacy formula.
+  Its base table matches the fixed SSA 2021 table in the 2024 Trustees Report.
+  The lifestyle adjustments and resulting personal estimate remain unvalidated.
+  Current/former smoker cannot both be selected for a new calculation.
 
 Every new selection, including first setup, previews the exact target before
 saving. Declining or Cancel changes nothing. Past dates are allowed after a
@@ -224,14 +224,54 @@ does not make repeated calculations on different dates identical.
 | `death_clock/targets.py` | Explicit target date/age selection and validation |
 | `death_clock/factors.py` | Shared definitions for legacy formula inputs |
 | `death_clock/life_expectancy.py` | Optional legacy reminder formula |
-| `death_clock/ssa_life_table.py` | Unverified legacy table, originally labeled SSA 2021 |
+| `death_clock/ssa_life_table.py` | Loads and interpolates the pinned SSA table |
+| `death_clock/data/ssa_2021_tr2024.csv` | Verified 2021 table from the 2024 Trustees Report |
+| `death_clock/provenance.py` | Validates saved calculation attribution |
+| `tools/verify_ssa_source.py` | Offline comparison against the retained source |
 | `death_clock/startup.py` | Windows registry launch-at-login |
 
 ---
 
 ## A caveat on the numbers
 
+All 240 base-table values were checked against the fixed official source. The
+audit corrected 238 values in the earlier embedded table. Existing saved targets
+were preserved exactly; only a newly confirmed calculation uses the corrected
+table. See the [source verification and audit](docs/sources/SSA_VERIFICATION.md).
+
 The legacy multipliers have no verified source mapping in this project and are
-combined as if independent. The table's source fidelity also remains unverified.
-The option is retained for compatibility, with explicit preview and confirmation.
-A chosen date or age better matches the app's purpose as a personal reminder.
+combined as if independent. Verifying the base table does not validate those
+adjustments or make the result an individual prediction. A chosen date or age
+better matches the app's purpose as a personal reminder.
+
+New legacy calculations save the source, table hash, model version, calculation
+time, and exact target. Export/restore preserves valid attribution; old targets
+receive no invented calculation history. Choosing a manual date or age clears
+that attribution. Imported metadata is not proof of authenticity.
+
+## Development and verification
+
+After setup, run these commands from the project root in PowerShell. They use
+the existing environment without installing or updating dependencies:
+
+```powershell
+.\.venv\Scripts\python.exe -B -m pytest -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -B tools/verify_ssa_source.py
+```
+
+The latest regression run passed **252 tests**. Tests use fictional profiles and
+temporary paths. The source check compares all 120 ages for both sexes against
+the retained HTML and checks pinned hashes; it does not fetch a changing online
+table. Preserve exact existing targets when maintaining code or data.
+
+For an isolated UI session, run
+`.\.venv\Scripts\python.exe -B tools/manual_acceptance.py`. This creates temporary
+fictional settings and disables login registration, the tray, and the production
+instance lock. It is a test helper, not the normal launcher.
+
+Local manual checks covered target previews, export/restore dialogs, cancellation,
+and scrolling. Windows sign-in, actual second-computer restore, physical
+monitor/scaling changes, and real tray/desktop-shortcut checks were explicitly
+deferred by the owner on September 27, 2026; they are not claimed as passed.
+See the [acceptance record](docs/MANUAL_ACCEPTANCE.md) and
+[project status](PROJECT_STATUS.md) for details and future checks.

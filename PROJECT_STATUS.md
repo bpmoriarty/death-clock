@@ -23,7 +23,21 @@ All five original priorities are implemented and tested:
    total days or weeks/days. Defaults stay familiar. After the target passes,
    show “Make today count” and retain the date. Modal dialogs stay in front.
 
-## Latest increment — target selection and cleanup
+## Latest increment — verified SSA base table
+
+- Pin the SSA 2021 period table as used in the 2024 Trustees Report, using its
+  fixed year/report URL. Retain extracted HTML, the runtime CSV, hashes, and a
+  complete audit in docs/sources/SSA_VERIFICATION.md.
+- Correct 238 of 240 embedded values (119 per sex); all ages 0–119 now match
+  the retained official source. No lifestyle multipliers or formula rules changed.
+- Newly confirmed legacy calculations record source URL, table ID/hash, model
+  version, local calculation time, and exact target. Export/restore carries these
+  details, validates their shape and target binding, and clears stale attribution
+  when restoring an older file or choosing a manual target.
+- Existing targets stay exact and receive no invented calculation history.
+  Source verification does not validate the lifestyle-adjusted formula.
+
+## Completed — target selection and cleanup
 
 - Existing countdowns open with Keep saved target, preserving the exact ISO value
   even with a missing/damaged birth date.
@@ -43,33 +57,52 @@ All five original priorities are implemented and tested:
 
 ## Verification and acceptance
 
-**238 tests passed** with the project's Python 3.12.10. This includes target date
+**252 tests passed** with the project's Python 3.12.10. The 14 new source/provenance
+checks compare all 240 runtime values to independently parsed SSA HTML, pin both
+source/data hashes, and cover metadata saving, export/restore, invalid imports,
+failed writes, and unchanged existing targets. Earlier checks include target date
 and age boundaries, preview acceptance/decline, damaged-profile preservation,
-first-run setup/export, and deterministic legacy calculation checks. The count
-decreased from an intermediate 240 when redundant legacy tests were replaced.
+first-run setup/export, and deterministic legacy calculation checks.
 All settings tests use temporary paths and fictional profiles.
 
 Invisible Settings forms built every selection mode at normal and 150% widget
 scaling. Earlier verification included 48 native display-font layouts, monitor
 geometry checks, native single-instance processes, and isolated VBS/shortcut checks.
 The user confirmed successful reopening after storage changes and working display
-options. Manual acceptance remains for new target-selection interactions, actual
-cross-computer restore, login startup, and physical monitor/DPI changes.
+options. The September 26–27 isolated manual pass verified date setup, native
+export/restore dialogs, restore acceptance/decline, Keep saved target, a leap-day
+age preview, target-change decline, Cancel persistence, and legacy-form scrolling.
+The test copy exited normally. See docs/MANUAL_ACCEPTANCE.md for evidence and
+limits. Actual cross-computer restore, login startup, physical monitor/DPI
+changes, and real tray/desktop-shortcut interactions remain untested manually.
+On September 27, 2026 the owner explicitly deferred these environment-specific
+checks and authorized the README update. They are retired from this improvement
+plan's completion requirements, not recorded as passed; the acceptance record
+retains the steps for a future suitable session.
 
 Implementation/tests did not change the live profile, local preferences, running
 clock, registry, or dependencies. Activate UI changes on a normal exit/relaunch.
 
-## Remaining work
+## Improvement plan completed — September 27, 2026
 
-Work is paused at the user's request. Resume with the open plan items when asked.
-After the plan is finished, give README.md a final update for GitHub covering the
-finished behavior, setup, and usage. Existing incremental README edits are not
-that final pass. Record completion here before deleting IMPROVEMENT_PLAN.md.
+All five priorities, target selection, code/test cleanup, and SSA source
+verification are implemented. Local manual acceptance is recorded; outstanding
+environment checks were explicitly deferred by the owner. The final GitHub README
+now covers setup, daily use, target protection, device preferences, portability,
+verified source data and its limits, and maintenance commands. The completed
+IMPROVEMENT_PLAN.md was deleted as requested. Its history remains in Git.
 
-Keep IMPROVEMENT_PLAN.md until the open work is completed or explicitly retired.
-The embedded legacy table still needs verification against a fixed official
-source; model/source provenance is unverified and labeled accordingly. No table
-values or multipliers were changed. This work does not claim medical accuracy.
+No further implementation work is scheduled. The deferred checks remain useful
+future follow-ups in docs/MANUAL_ACCEPTANCE.md. The lifecycle of this plan is
+complete without claiming those checks passed or the legacy formula is validated.
+
+## Maintenance
+
+Use the existing environment to run the regression suite and offline source
+verification (commands in README.md). Follow AGENTS.md: use fictional temporary
+profiles, preserve exact saved targets, and never synchronize dependencies while
+the clock runs. For table changes, retain a fixed source and update all rows,
+hashes, and model/table IDs together; see docs/sources/SSA_VERIFICATION.md.
 
 OneDrive is not conflict-free storage. Change the shared profile on one computer
 at a time; shared-change checks cannot prevent every simultaneous remote write.
