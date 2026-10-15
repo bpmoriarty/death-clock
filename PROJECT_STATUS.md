@@ -98,6 +98,10 @@ complete without claiming those checks passed or the legacy formula is validated
 
 ## Maintenance
 
+On October 14, 2026, added the MIT License in LICENSE and linked it from the
+README. Copyright is attributed to Brian, matching the repository's Git author
+configuration. No application behavior changed.
+
 Use the existing environment to run the regression suite and offline source
 verification (commands in README.md). Follow AGENTS.md: use fictional temporary
 profiles, preserve exact saved targets, and never synchronize dependencies while

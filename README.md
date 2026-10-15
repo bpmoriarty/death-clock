@@ -275,3 +275,7 @@ monitor/scaling changes, and real tray/desktop-shortcut checks were explicitly
 deferred by the owner on September 27, 2026; they are not claimed as passed.
 See the [acceptance record](docs/MANUAL_ACCEPTANCE.md) and
 [project status](PROJECT_STATUS.md) for details and future checks.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
